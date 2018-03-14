@@ -15,6 +15,10 @@
 /debug/*
 debug/*
 
+# ignore pytest_cache
+.pytest_cache/*
+.pytest_cache
+
 #__pycache__
 /mdesc/__pycache__/
 
