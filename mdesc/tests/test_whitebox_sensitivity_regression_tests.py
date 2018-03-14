@@ -60,8 +60,9 @@ class TestWBBaseMethods(unittest.TestCase):
         self.wine = wine
         self.mod_df = mod_df
 
-    def test_transform_function_predictedYSmooth(self):
-        """test predictedYSmooth present after _transform_function called"""
+    def test_transform_func_predictedYSmooth(self):
+        """test predictedYSmooth present after _transform_func called"""
+        self.WB._validate_params()
 
         group = self.wine.groupby('Type').get_group('White')
 
@@ -71,19 +72,18 @@ class TestWBBaseMethods(unittest.TestCase):
 
         col = 'density'
 
-        res = self.WB._transform_function(group,
+        res = self.WB._transform_func(group,
                                           col=col,
-                                          vartype='Continuous',
                                           groupby_var='Type')
 
         self.assertIn('predictedYSmooth',
                       res.columns.tolist(),
                       """predictedYSmooth not present in output df after
-                      _transform_function called""")
+                      _transform_func called""")
 
-    def test_transform_function_predictedYSmooth_val(self):
+    def test_transform_func_predictedYSmooth_val(self):
         """test median predictedYSmooth is returned after transform_function called"""
-
+        self.WB._validate_params()
         group = self.wine.groupby('Type').get_group('White')
 
         group['diff'] = np.random.uniform(-1, 1, group.shape[0])
@@ -94,28 +94,35 @@ class TestWBBaseMethods(unittest.TestCase):
 
         col = 'density'
 
-        res = self.WB._transform_function(group,
+        res = self.WB._transform_func(group,
                                           col=col,
-                                          vartype='Continuous',
                                           groupby_var='Type')
 
         self.assertEqual(res['predictedYSmooth'].values.tolist()[0],
                          correct,
                          """unexpected value for predictedYSmooth - should be median default""")
 
-    def test_var_check_output(self):
-        """test return of json like object after var_check run"""
+    def test_predict_synthetic_inc_val(self):
+        """test incremental val for predict_synthetic"""
 
-        self.WB._cat_df['errors'] = np.random.uniform(-1, 1, self.WB._cat_df.shape[0])
-        self.WB._cat_df['predictedYSmooth'] = np.random.uniform(-1, 1, self.WB._cat_df.shape[0])
+        # assign preds
+        self.WB._validate_params()
+        self.WB._cat_df['predictedYSmooth'] = np.random.rand(self.WB._cat_df.shape[0])
+        incremental_val, diff, mask = self.WB._predict_synthetic(col='Type')
 
-        out = self.WB._var_check('fixed acidity',
-                      'Type')
+        self.assertEqual(incremental_val,
+                         self.wine['Type'].mode().tolist()[0],
+                         """incorrect categorical incrementing value detected""")
 
-        self.assertIsInstance(out,
-                              dict,
-                              """var_check didn't return json like object after run""")
+    def test_predict_synthetic_inc_val_continuous(self):
+        """test incremental val for predict_synthetic continuous variable"""
 
+        # assign preds
+        self.WB._validate_params()
+        self.WB._cat_df['predictedYSmooth'] = np.random.rand(self.WB._cat_df.shape[0])
+        incremental_val, diff, mask = self.WB._predict_synthetic(col='sulphates')
 
-
+        self.assertEqual(incremental_val,
+                         self.wine['sulphates'].std(),
+                         """incorrect continuous incrementing value detected""")
 

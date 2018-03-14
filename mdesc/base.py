@@ -1,39 +1,69 @@
-#!/usr/bin/env python
+# !/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 from abc import abstractmethod, ABCMeta
 import logging
-import sys
+import six
 
 import numpy as np
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 
 from mdesc.utils import utils as md_utils
 from mdesc.utils import check_utils as checks
 from mdesc.utils import percentiles
 from mdesc.utils import formatting
-from mdesc.utils.fmt_model_outputs import fmt_sklearn_preds
+
 
 logger = md_utils.util_logger(__name__)
 
-class MdescBase(object):
 
-    __metaclass__ = ABCMeta
+class PrettyListMixn(object):
+    """
+    class mix-in for pretty printing of class attrs
+    """
+
+    def _getnames(self):
+        """
+        Retrieve class attributes
+
+        :return: str - formatted class attributes
+        :rtype: str
+        """
+        return ''.join(['\t{}={}\n'.format(attr, self.__dict__[attr])
+                        for attr in sorted(self.__dict__)
+                        if not isinstance(self.__dict__[attr], pd.DataFrame)])
+
+    def __str__(self):
+        """
+        represent class attributes
+
+        :return: str - formatted class attributes
+        :rtype: str
+        """
+        return '<Instance of {}, address: {}\n{}>'.format(self.__class__.__name__,
+                                                          id(self),
+                                                          self._getnames())
+
+
+class MdescBase(six.with_metaclass(ABCMeta,
+                                   percentiles.Percentiles,
+                                   PrettyListMixn)):
 
     @abstractmethod
     def __init__(
-                    self,
-                    modelobj,
-                    model_df,
-                    ydepend,
-                    cat_df=None,
-                    keepfeaturelist=None,
-                    groupbyvars=None,
-                    aggregate_func=np.nanmedian,
-                    error_type='RMSE',
-                    autoformat_types=False,
-                    round_num=2,
-                    verbose=None):
+            self,
+            modelobj,
+            model_df,
+            ydepend,
+            cat_df=None,
+            groupbyvars=None,
+            keepfeaturelist=None,
+            aggregate_func=np.nanmedian,
+            error_type='RMSE',
+            autoformat_types=False,
+            round_num=2,
+            verbose=None):
         """
         MdescBase base class instantiation and parameter checking
 
@@ -55,151 +85,91 @@ class MdescBase(object):
         :param verbose: set verbose level -- 0 = debug, 1 = warning, 2 = error
         """
         logger.setLevel(md_utils.Settings.verbose2log[verbose])
-        logger.info('Initilizing {} parameters'.format(self.__class__.__name__))
-        # check error type is supported format
-        if error_type not in md_utils.Settings.supported_agg_errors:
-            raise md_utils.ErrorWarningMsgs.error_msgs['error_type']
+        logger.info('Initilizing {} class parmaetres'.format(self.__class__.__name__))
 
-            # check groupby vars
-        if not groupbyvars:
-            raise md_utils.ErrorWarningMsgs.error_msgs['groupbyvars']
+        super(MdescBase, self).__init__(
+                                        cat_df,
+                                        groupbyvars,
+                                        round_num=round_num)
 
-        # make copy, reset index and assign model dataframe
         self._model_df = model_df.copy(deep=True).reset_index(drop=True)
-        # check cat_df
-        cat_df = checks.CheckInputs.check_cat_df(cat_df.copy(deep=True).reset_index(drop=True), 
-                                                 self._model_df)
-
-        # check keepfeaturelist
-        self._keepfeaturelist = checks.CheckInputs.check_keepfeaturelist(keepfeaturelist, cat_df)
-
-        # subset dataframe down based on user input
-        self._cat_df = formatting.subset_input(cat_df,
-                                               self._keepfeaturelist,
-                                               ydepend)
-
-        # check modelobj
-        self._modelobj = checks.CheckInputs.check_modelobj(modelobj)
-        # check verbosity
-        if verbose:
-            checks.CheckInputs.check_verbose(verbose)
-        # check for classification or regression
-        self.predict_engine, self.model_type = checks.CheckInputs.is_regression(modelobj)
-
-        # check aggregate func
-        self.aggregate_func = checks.CheckInputs.check_agg_func(aggregate_func)
-        # check error type supported
+        self._keepfeaturelist = keepfeaturelist
+        self._cat_df = cat_df
+        self._modelobj = modelobj
+        self.aggregate_func = aggregate_func
         self.error_type = error_type
-        # assign dependent variable
         self.ydepend = ydepend
-        # if user specified keepfeaturelist, use column mappings otherwise use original groupby
         self.groupbyvars = groupbyvars
-        # determine the calling class (ErrorViz or SensitivityViz)
         self.called_class = self.__class__.__name__
-        # create percentiles
-        self.Percentiles = percentiles.Percentiles(self._cat_df,
-                                                   self.groupbyvars,
-                                                   round_num=round_num)
-        # get population percentiles
-        self.Percentiles.population_percentiles()
-
-        if autoformat_types is True:
-            self._cat_df = formatting.autoformat_types(self._cat_df)
-
         self.agg_df = pd.DataFrame()
         self.raw_df = pd.DataFrame()
         self.round_num = round_num
+        if autoformat_types is True:
+            self._cat_df = formatting.autoformat_types(self._cat_df)
 
-    @property
-    def modelobj(self):
-        return self._modelobj
+    def _validate_params(self):
+        # check featurelist
+        self._keepfeaturelist = checks.CheckInputs.check_keepfeaturelist(self._keepfeaturelist,
+                                                                         self._cat_df)
 
-    @property
-    def cat_df(self):
-        return self._cat_df
+        self._cat_df = checks.CheckInputs.check_cat_df(self._cat_df,
+                                                       self._model_df)
+        # check for classification or regression
+        self._cat_df = formatting.subset_input(self._cat_df,
+                                               self._keepfeaturelist,
+                                               self.ydepend)
 
-    @property
-    def model_df(self):
-        return self._model_df
-    
-    @property
-    def keepfeaturelist(self):
-        return self._keepfeaturelist
+        self.predict_engine, self.model_type = checks.CheckInputs.is_regression(self._modelobj)
 
-    @abstractmethod
-    def _transform_function(self,
-                            group,
-                            groupby_var=None,
-                            col=None,
-                            vartype='Continuous'):
-        # method to operate on slices of data within groups
-        pass
+        # check groupby vars
+        if not self.groupbyvars:
+            # TODO add all data hack
+            raise md_utils.ErrorWarningMsgs.error_msgs['groupbyvars']
 
-    @abstractmethod
-    def _var_check(
-                    self,
-                    col=None,
-                    groupby_var=None):
+        checks.CheckInputs.check_modelobj(self._modelobj)
+
+        # get population percentiles
+        self.population_percentiles()
+
+
+    @staticmethod
+    def revalue_numeric(data,
+                        col):
         """
-        _var_check tests for categorical or continuous variable and performs operations
-        dependent upon the var type
+        revalue numeric columns with max value of percnetile group
 
-        :param col: current column being operated on
-        :param groupby_var: current groupby level
-        """
-        pass
-
-    # TODO add weighted schematics function
-    def _continuous_slice(
-                        self,
-                        group,
-                        col=None,
-                        groupby_var=None):
-        """
-        _continuous_slice operates on portions of continuous data that correspond
-        to a particular group specified by groupby. If current group
-        has more than 100 observations, create 100 percentile buckets.
-        Otherwise, use raw data values. Data is only assigned to percentile bucket if
-        data actually exists. In cases where there are big gaps between data points,
-        even with more than 100 observations, there could be far less percentile buckets
-        that align with the actual data.
-
-
-        :param group: slice of data with columns, etc.
-        :param col: current continuous variable being operated on
-        :param groupby_var: str current groupby variable
-        :return: transformed data with col data max, errPos mean, errNeg mean,
-                and prediction means for this group
+        :param data: slice of data
+        :param col: col value to revalue
+        :return: revalued dataframe on column
         :rtype: pd.DataFrame
         """
-        logger.info("""Creating percentile bins
-                    \nCol: {}
-                    \nGroupby_var: {}
-                    \nGroup shape: {}""".format(col, groupby_var, group.shape))
+        # ensure numeric dtype and slice is greater than 100 observations
+        # otherwise return data as is
+        if is_numeric_dtype(data.loc[:, col]) and data.shape[0] > 100:
+            data['bins'] = pd.qcut(data[col],
+                                   q=100,
+                                   duplicates='drop')
+            # get max vals per group
+            maxvals = (data.groupby('bins')[col]
+                       .max()
+                       .reset_index()
+                       .rename(columns={col: 'maxcol'}))
+            # merge back
+            data = pd.merge(data, maxvals, on='bins')
+            # drop and rename columns
+            data = (data
+                    .drop('bins', axis=1)
+                    .drop(col, axis=1)
+                    .rename(columns={'maxcol': col}))
+        return data
 
-        continuous_group = group.reset_index(drop=True).copy(deep=True)
-        # pull out col being operated on
-        group_col_vals = continuous_group.loc[:, col]
-        # if more than 100 values in the group, use percentile bins
-        if group.shape[0] > 100:
-            # digitize needs monotonically increasing vector
-            group_percentiles = sorted(list(set(percentiles.create_percentile_vecs(group_col_vals))))
-            # create percentiles for slice
-            continuous_group['fixed_bins'] = np.digitize(group_col_vals, 
-                                                         group_percentiles, 
-                                                         right=True)
-        else:
-            logger.info("""Slice of data less than 100 continuous observations, 
-                                using raw data as opposed to percentile groups - Group size: {}""".format(group.shape))
-            continuous_group['fixed_bins'] = group_col_vals
-
-        logger.info("""Applying transform function to continuous bins""")
-        # group by bins
-        errors_out = continuous_group.groupby('fixed_bins').apply(self._transform_function,
-                                                                  col=col,
-                                                                  groupby_var=groupby_var,
-                                                                  vartype='Continuous')
-        return errors_out
+    @abstractmethod
+    def _transform_func(self,
+                        group,
+                        groupby_var='Type',
+                        col=None
+                        ):
+        pass
 
     def _create_preds(self,
                       df):
@@ -218,6 +188,51 @@ class MdescBase(object):
 
         return preds
 
+    @abstractmethod
+    def run(self,
+            output_type='html',
+            **kwargs):
+        pass
+
+    def _plc_hldr_out(self,
+                      insights_list,
+                      results,
+                      html_type):
+        """
+        format output df into nested json for html out
+
+        :param insights_list: list of dataframes containing accuracy metrics
+        :param results: list of results per iteration
+        :param html_type:
+        :return:
+        """
+        final_output = []
+
+        aligned = formatting.FmtJson.align_out(results,
+                                               html_type=html_type)
+        # for each json element, flatten and append to final output
+        for json_out in aligned:
+            final_output.append(json_out)
+
+        logging.info('Converting accuracy outputs to json format')
+        # finally convert insights_df into json object
+        # convert insights list to dataframe
+        insights_df = pd.concat(insights_list)
+        insights_json = formatting.FmtJson.to_json(insights_df.round(self.round_num),
+                                                   html_type='accuracy',
+                                                   vartype='Accuracy',
+                                                   err_type=self.error_type,
+                                                   ydepend=self.ydepend,
+                                                   mod_type=self.model_type)
+        # append to outputs
+        final_output.append(insights_json)
+        # append percentiles
+        final_output.append(self.percentiles)
+        # append groupby percentiles
+        final_output.append(self.group_percentiles_out)
+        # assign placeholder final outputs to class instance
+        self.outputs = final_output
+
     def _fmt_raw_df(self,
                     col,
                     groupby_var,
@@ -232,7 +247,9 @@ class MdescBase(object):
         :return: Formatted dataframe
         :rtype: pd.DataFrame
         """
-        logger.info("""Formatting specifications - col: {} - groupbvy_var: {} - cur_group shape: {}""".format(col, groupby_var, cur_group.shape))
+        logger.info(
+            """Formatting specifications - col: {} - groupbvy_var: {} - cur_group shape: {}""".format(col, groupby_var,
+                                                                                                      cur_group.shape))
 
         # take copy
         group_copy = cur_group.copy(deep=True)
@@ -269,167 +286,84 @@ class MdescBase(object):
         # self.agg_df = self.agg_df.append(debug_df)
         self.agg_df = pd.concat([self.agg_df, debug_df])
 
-    def run(self,
-            output_type='html',
-            output_path=''):
-        """
-        main run engine. Iterate over columns specified in keepfeaturelist,
-        and perform anlaysis
-        :param output_type: str output type:
-                html - save html to output_path
-                raw_data - return raw analysis dataframe
-                agg_data - return aggregate analysis dataframe
-        :param output_path: - fpath to save output
-        :return: pd.DataFrame or saved html output
-        :rtype: pd.DataFrame or .html
-        """
-        # ensure supported output types
-        if output_type not in md_utils.Settings.supported_out_types:
-            error_out = """Output type {} not supported.
-                                \nCurrently support {} output""".format(output_type,
-                                                                        md_utils.Settings.supported_out_types)
-
-            logger.error(error_out)
-
-            raise ValueError(error_out)
-
-        # run the prediction function first to assign the errors to the dataframe
-        self._cat_df = fmt_sklearn_preds(self.predict_engine,
-                                         self.modelobj,
-                                         self._model_df,
-                                         self._cat_df,
-                                         self.ydepend,
-                                         self.model_type)
-        # create placeholder for outputs
-        placeholder = []
-        # create placeholder for all insights
-        insights_list = []
-        logging.info("""Running main program. Iterating over 
-                    columns and applying functions depednent on datatype""")
-
-        not_in_cols = ['errors', 'predictedYSmooth', self.ydepend]
-
-        # filter columns to iterate through
-        to_iter_cols = self._cat_df.columns[~self._cat_df.columns.isin(not_in_cols)]
-
-        for idx, col in enumerate(to_iter_cols):
-
-            # column placeholder
-            colhold = []
-
-            for groupby_var in self.groupbyvars:
-                # if current column is the groupby variable,
-                # create error metrics
-                if col != groupby_var:
-                    json_out = self._var_check(
-                                                col=col,
-                                                groupby_var=groupby_var)
-                    # append to placeholder
-                    colhold.append(json_out)
-
-                else:
-                    logging.info(
-                                """Creating accuracy metric for 
-                                groupby variable: {}""".format(groupby_var))
-                    # create error metrics for slices of groupby data
-                    acc = md_utils.create_accuracy(self.model_type,
-                                                   self._cat_df,
-                                                   self.error_type,
-                                                   groupby=groupby_var)
-                    # append to insights dataframe placeholder
-                    insights_list.append(acc)
-
-                logger.info("""Run processed - Col: {} - groupby_var: {}""".format(col, groupby_var))
-
-            # map all of the same columns errors to the first element and
-            # append to placeholder
-            # dont append if placeholder is empty due to col being the same as groupby
-            if len(colhold) > 0:
-                placeholder.append(formatting.FmtJson.flatten_json(colhold))
-            # TODO redirect stdout so progress bar can output to single line
-            md_utils.sysprint('Percent Complete: {per:2.0f}%'.format(per=(float(idx) / float(len(to_iter_cols))) * 100))
-
-        md_utils.sysprint('Percent Complete: 100%')
-        logging.info('Converting accuracy outputs to json format')
-        # finally convert insights_df into json object
-        # convert insights list to dataframe
-        insights_df = pd.concat(insights_list)
-        insights_json = formatting.FmtJson.to_json(insights_df.round(self.round_num),
-                                                   html_type='accuracy',
-                                                   vartype='Accuracy',
-                                                   err_type=self.error_type,
-                                                   ydepend=self.ydepend,
-                                                   mod_type=self.model_type)
-        # append to outputs
-        placeholder.append(insights_json)
-        # append percentiles
-        placeholder.append(self.Percentiles.percentiles)
-        # append groupby percentiles
-        placeholder.append(self.Percentiles.group_percentiles_out)
-        # assign placeholder final outputs to class instance
-        self.outputs = placeholder
-        # save outputs if specified
-        if output_type == 'html':
-            self._save(fpath=output_path)
-        elif output_type == 'raw_data':
-            return self.get_raw_df()
-        elif output_type == 'agg_data':
-            return self.get_agg_df()
-
-    def get_raw_df(self):
-        """
-        return unaggregated analysis dataframe
-
-        :return: unaggregated analysis dataframe
-        :rtype: pd.DataFrame
-        """
-        if not hasattr(self, 'outputs'):
-            raise RuntimeError(""".run() must be called before returning analysis data""")
-
-        return self.raw_df.reset_index()
-
-    def get_agg_df(self):
-        """
-        return aggregated analysis dataframe
-
-        :return: aggregated analysis dataframe
-        :rtype: pd.DataFrame
-        """
-        if not hasattr(self, 'outputs'):
-            raise RuntimeError(""".run() must be called before returning analysis data""")
-
-        return self.agg_df.reset_index()
-
-    def _save(self, fpath=''):
+    def _save(self,
+              output_type,
+              **kwargs):
         """
         save html output to disc
-        
+
         :param fpath: file path to save html file to
         """
-        logging.info("""creating html output for type: {}""".format(md_utils.Settings.html_type[self.called_class]))
+        if output_type == 'html':
+            logging.info("""creating html output for type: {}""".format(md_utils.Settings.html_type[self.called_class]))
 
-        # tweak self.ydepend if classification case (add dominate class)
-        if self.model_type == 'classification':
-            ydepend_out = '{}: {}'.format(self.ydepend, self._modelobj.classes_[1])
+            # tweak self.ydepend if classification case (add dominate class)
+            if self.model_type == 'classification':
+                ydepend_out = '{}: {}'.format(self.ydepend, self._modelobj.classes_[1])
+            else:
+                # regression case
+                ydepend_out = self.ydepend
+
+            # create HTML output
+            html_out = formatting.HTML.fmt_html_out(
+                str(self.outputs),
+                ydepend_out,
+                htmltype=md_utils.Settings.html_type[self.called_class])
+            # save html_out to disk
+            with open(kwargs.get('fpath', ValueError('Must specify fpath when saving as html')), 'w') as outfile:
+                logging.info("""Writing html file out to disk""")
+                outfile.write(html_out)
+        if output_type == 'raw_data':
+            return self.raw_df
+        if output_type == 'agg_data':
+            return self.agg_df
+
+    def _base_runner(self,
+                     df,
+                     col,
+                     groupby_var,
+                     ):
+        """
+        Push grouping and iteration construct to core pandas. Normalize each column
+        (leave categories as is and convert numeric cols to percentile bins). Apply
+        transform function, and format final outputs.
+
+        :param df: pd.DataFrame
+        :param col: str - column currently being operated on
+        :param groupby_var: str - groupby level
+        :return: tuple of transformed data (return type, return data)
+        :rtype: tuple
+        """
+        if col != groupby_var:
+
+            res = (df.groupby(groupby_var)
+                   .apply(MdescBase.revalue_numeric,
+                          col)
+                   .reset_index(drop=True)
+                   .groupby([groupby_var, col])
+                   .apply(self._transform_func,
+                          groupby_var=groupby_var,
+                          col=col)
+                   .reset_index(drop=True)
+                   .fillna('nan')
+                   .round(self.round_num))
+
+            out = ('res', res)
+
         else:
-            # regression case
-            ydepend_out = self.ydepend
+            logging.info(
+                """Creating accuracy metric for 
+                groupby variable: {}""".format(groupby_var))
+            # create error metrics for slices of groupby data
+            acc = md_utils.create_accuracy(self.model_type,
+                                           self._cat_df,
+                                           self.error_type,
+                                           groupby=groupby_var)
+            # append to insights dataframe placeholder
+            out = ('insights', acc)
 
-        # create HTML output
-        html_out = formatting.HTML.fmt_html_out(
-                                            str(self.outputs),
-                                            ydepend_out,
-                                            htmltype=md_utils.Settings.html_type[self.called_class])
-        # save html_out to disk
-        with open(fpath, 'w') as outfile:
-            logging.info("""Writing html file out to disk""")
-            outfile.write(html_out)
+        return out
 
-    def __str__(self):
-        """
-        Print readable version of class and params
-        """
-        header = '{name}:\n'.format(name=self.__class__.__name__)
-        footer = '\n '.join(['{k}: {v}'.format(k=key, v=self.__dict__.get(key)) for key in self.__dict__ if not isinstance(self.__dict__.get(key),
-                                                                                                                         pd.DataFrame)])
-        return header + footer
+
+
+

@@ -78,7 +78,8 @@ class TestCheckUtils(unittest.TestCase):
         with self.assertRaises(ValueError) as context:
             testlist = ['test', 'test2']
             keep = Check.check_keepfeaturelist(testlist,
-                                               df)
+                                               df,
+                                               )
 
         self.assertTrue(context,
                         """ValueError not raised when feature not present in dataframe""")
@@ -97,14 +98,6 @@ class TestCheckUtils(unittest.TestCase):
         self.assertEqual(res,
                          keep,
                          """check_keepfeaturelist does not return origina list when checks pass""")
-
-    def test_check_agg_func(self):
-        """ check_agg_func returns func when appropriate """
-        res = Check.check_agg_func(np.median)
-
-        self.assertEqual(res.__name__,
-                         'median',
-                         """check_agg_func doesnt return original function""")
 
     def test_check_agg_func_cails(self):
         """test check_agg_func fails with inappropriate function"""

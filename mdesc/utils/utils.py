@@ -5,7 +5,7 @@ import logging
 import sys
 import random
 import numpy as np
-import io
+import pip
 
 from sklearn.datasets import make_blobs, make_regression
 import pandas as pd
@@ -238,13 +238,46 @@ def util_logger(name):
     logger.setLevel(logging.DEBUG)
     return logger
 
-def sysprint(message):
-    """
-    print message to console
 
-    :param message: str - message to print
-    :return: sys.stdout
-    :rtype: sys.stdout.write()
+class SysBar(object):
+
+    def __init__(self, total):
+        self.total = float(total)
+        self.status = 0.0
+
+    def update(self, val):
+        self.status += float(val)
+        # print message
+        percent_complete = round((self.status / self.total) * 100, 0)
+        sys.stdout.write('\rPercent Complete: {}%'.format(percent_complete))
+        # sys.stdout.flush()
+
+    def close(self):
+        pass
+
+    def refresh(self):
+        sys.stdout.flush()
+
+
+def progress_bar():
     """
-    sys.stdout.write('\r{}'.format(message))
-    sys.stdout.flush()
+    check current environment and return appropritate progressbar
+
+    :return: progressbar
+    """
+    tqdm_check = all([True for pkg in pip.get_installed_distributions() if 'tqdm' in str(pkg).lower().split()[0]])
+    if tqdm_check:
+        # don't fail if tqdm installed incorrectly or otherwise
+        try:
+            import tqdm
+            # check if in jupyter notebook
+            try:
+                shell = get_ipython().__class__.__name__
+                return tqdm.tqdm_notebook
+            except NameError:
+                return tqdm.tqdm
+        except NameError:
+            return SysBar
+    else:
+        return SysBar
+

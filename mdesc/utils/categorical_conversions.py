@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+
 def pandas_switch_modal_dummy(cur_col,
                               cat_df,
                               copydf):
@@ -35,4 +36,6 @@ def pandas_switch_modal_dummy(cur_col,
     # switch non modal columns to 0
     copydf.loc[:, non_mode_col] = 0
     # return df with switch modal column and
-    return modal_val, copydf.loc[non_mode_row_mask, :], cat_df.loc[non_mode_row_mask, :]
+    # return modal_val, copydf.loc[non_mode_row_mask, :], cat_df.loc[non_mode_row_mask, :]
+    print('Categorical Conversion: {}'.format(copydf.shape))
+    return modal_val, copydf, non_mode_row_mask

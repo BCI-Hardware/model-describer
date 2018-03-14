@@ -1,6 +1,4 @@
 # ipython notebooks
-/docs/.ipynb_checkpoints/
-.ipynb_checkpoints
 *.ipynb_checkpoints
 
 # Compiled python modules.
@@ -8,7 +6,6 @@
 
 # cache files
 .cache
-/.cache
 /.cache
 
 # Setuptools distribution folder.
