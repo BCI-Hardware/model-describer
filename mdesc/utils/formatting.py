@@ -10,7 +10,8 @@ import numpy as np
 
 def autoformat_types(inputdf):
     """
-    cast dtype category to strings
+    cast dtype category to strings - convert integers to floats
+    for python 2 integer formatting as long - 1L doesnt render in HTML
 
     :param inputdf: dataframe input
     :return: dataframe output categories casted as strings
@@ -19,6 +20,10 @@ def autoformat_types(inputdf):
     # convert categorical dtypes to strings
     catcols = inputdf.select_dtypes(include=['category']).columns
     inputdf[catcols] = inputdf[catcols].apply(lambda x: x.astype(str))
+
+    # format numeric columns
+    numcols = inputdf.select_dtypes(include=[np.number]).columns
+    inputdf[numcols] = inputdf[numcols].apply(lambda x: x.astype(float))
     return inputdf
 
 def subset_input(input_df,
