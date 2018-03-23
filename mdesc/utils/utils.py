@@ -276,7 +276,7 @@ def progress_bar():
                 return tqdm.tqdm_notebook
             except NameError:
                 return tqdm.tqdm
-        except NameError:
+        except:
             return SysBar
     else:
         return SysBar

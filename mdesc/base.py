@@ -62,7 +62,7 @@ class MdescBase(six.with_metaclass(ABCMeta,
             aggregate_func=np.nanmedian,
             error_type='RMSE',
             autoformat_types=False,
-            round_num=2,
+            round_num=4,
             verbose=None):
         """
         MdescBase base class instantiation and parameter checking

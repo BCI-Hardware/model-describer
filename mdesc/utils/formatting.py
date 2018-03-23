@@ -11,7 +11,8 @@ import numpy as np
 
 def autoformat_types(inputdf):
     """
-    cast dtype category to strings
+    cast dtype category to strings - cast integers to float to avoid python2
+    error of representing integers in long format, i.e. 10L
 
     :param inputdf: dataframe input
     :return: dataframe output categories casted as strings
@@ -20,6 +21,11 @@ def autoformat_types(inputdf):
     # convert categorical dtypes to strings
     catcols = inputdf.select_dtypes(include=['category']).columns
     inputdf[catcols] = inputdf[catcols].apply(lambda x: x.astype(str))
+
+    # cast numbers as floats
+    numcols = inputdf.select_dtypes(include=[np.number]).columns
+    inputdf[numcols] = inputdf[numcols].apply(lambda x: x.astype(float))
+
     return inputdf
 
 def subset_input(input_df,
