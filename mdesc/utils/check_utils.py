@@ -94,6 +94,14 @@ class CheckInputs(object):
                 raise ValueError("""Indices of cat_df and model_df are not aligned. Ensure Index's are 
                                             \nexactly the same before WhiteBox use.""")
             # reset users index in case of multi index or otherwise
+
+        # finally check is any missing values exist and are untreated
+        missing = cat_df.isnull().sum()
+        # pull col names and count of missing values for columns that have missing
+        missing = missing[missing > 0].to_dict()
+        if len(missing) > 0:
+            raise ValueError("""cat_df has missing values - resolve missing values for columns: {}""".format(missing))
+
         return cat_df
 
     @staticmethod

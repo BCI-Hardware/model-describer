@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import itertools
 
 from mdesc.utils import utils as wb_utils
 from mdesc.utils import formatting
@@ -9,10 +8,9 @@ from mdesc.utils import formatting
 def create_group_percentiles(df,
                              groupbyvars,
                              wanted_percentiles=None,
-                             round_num=4):
+                             round_num=2):
     """
     create percentiles based on groupby variable
-
     :param df: dataframe to create percentiles from
     :param groupbyvars: list of groupby variables
     :param wanted_percentiles: list of desired percentiles
@@ -35,26 +33,21 @@ def create_group_percentiles(df,
         groupbylist = []
         # iterate groupbys
         for group_name in groupbyvars:
-
-            group_out = (df.groupby(group_name)[col]
-                         .quantile(q=wanted_percentiles)
-                         .reset_index(name='value')
-                         .rename(columns={'level_1': 'percentile'})
-                         .round(round_num))
-
-            # map percentiles to strings formatted as percnetiles
-            group_out.loc[:, 'percentile'] = group_out.loc[:, 'percentile'].apply(lambda x: str(x * 100) + '%')
-
-            # format to list of dictionaryies
-            group_out = (group_out.groupby(group_name)
-                         .apply(lambda x: x.drop(group_name, axis=1)
-                                .to_dict(orient='records'))
-                         .reset_index(name='percentileValues')
-                         .rename(columns={group_name: 'groupByVar'})
-                         .to_dict(orient='records'))
-            # return final out
-            groupbylist.append(group_out)
-
+            # iterate over each slice of the groups
+            for name, group in df.groupby(group_name):
+                # get col of interest
+                group = group.loc[:, col]
+                # start data out for group
+                group_out = {'groupByVar': name}
+                # capture wanted percentiles
+                group_percent = group.quantile(wanted_percentiles).reset_index().rename(columns={'index': 'percentiles',
+                                                                                                 col: 'value'}).round(round_num)
+                # readjust percentiles to look nice
+                group_percent.loc[:, 'percentiles'] = group_percent.loc[:, 'percentiles'].apply(lambda x: str(int(x*100))+'%')
+                # convert percnetile dataframe into json format
+                group_out['percentileValues'] = group_percent.to_dict(orient='records')
+                # append group out to group placeholder list
+                groupbylist.append(group_out)
         # assign groupbylist out
         data_out['percentileList'] = groupbylist
         final_list.append(data_out)

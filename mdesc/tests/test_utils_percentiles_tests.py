@@ -59,7 +59,7 @@ class TestWhiteBoxError(unittest.TestCase):
                 all_groupbys.append(percent['groupByVar'])
 
         diff = list(set(all_groupbys).difference(set(self.df['col3'].unique())))
-
+        print(diff)
         self.assertEqual(len(diff),
                          0,
                          """create_group_percentiles output groupby levels

@@ -261,23 +261,17 @@ class SysBar(object):
 
 def progress_bar():
     """
-    check current environment and return appropritate progressbar
+    check current environment and return appropritate progressbar.
+    If tqdm installed, return tqdm.tqdm otherwise SysBar
 
     :return: progressbar
     """
-    tqdm_check = all([True for pkg in pip.get_installed_distributions() if 'tqdm' in str(pkg).lower().split()[0]])
-    if tqdm_check:
-        # don't fail if tqdm installed incorrectly or otherwise
-        try:
-            import tqdm
-            # check if in jupyter notebook
-            try:
-                shell = get_ipython().__class__.__name__
-                return tqdm.tqdm_notebook
-            except NameError:
-                return tqdm.tqdm
-        except:
-            return SysBar
-    else:
+    try:
+        import tqdm
+        # workaround for set changed size error
+        # https://github.com/tqdm/tqdm/issues/481
+        tqdm.tqdm.monitor_interval = 0
+        return tqdm.tqdm
+    except ImportError:
         return SysBar
 

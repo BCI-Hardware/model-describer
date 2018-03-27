@@ -148,27 +148,29 @@ class MdescBase(six.with_metaclass(ABCMeta,
         if is_numeric_dtype(data.loc[:, col]) and data.shape[0] > 100:
             data['bins'] = pd.qcut(data[col],
                                    q=100,
-                                   duplicates='drop')
+                                   duplicates='drop',
+                                   labels=False)
             # get max vals per group
             maxvals = (data.groupby('bins')[col]
                        .max()
-                       .reset_index()
-                       .rename(columns={col: 'maxcol'}))
+                       .reset_index(name='maxcol'))
             # merge back
-            data = pd.merge(data, maxvals, on='bins')
+            data = (data.join(maxvals, on='bins', how='inner',
+                              lsuffix='_left', rsuffix='_right')
+                    .rename(columns={'bins_left': 'bins'}))
             # drop and rename columns
             data = (data
-                    .drop('bins', axis=1)
-                    .drop(col, axis=1)
+                    .drop(['bins', col], axis=1)
                     .rename(columns={'maxcol': col}))
+
         return data
 
     @abstractmethod
     def _transform_func(self,
                         group,
                         groupby_var='Type',
-                        col=None
-                        ):
+                        col=None,
+                        output_df=False):
         pass
 
     def _create_preds(self,
@@ -322,7 +324,7 @@ class MdescBase(six.with_metaclass(ABCMeta,
                      df,
                      col,
                      groupby_var,
-                     ):
+                     **kwargs):
         """
         Push grouping and iteration construct to core pandas. Normalize each column
         (leave categories as is and convert numeric cols to percentile bins). Apply
@@ -335,7 +337,6 @@ class MdescBase(six.with_metaclass(ABCMeta,
         :rtype: tuple
         """
         if col != groupby_var:
-
             res = (df.groupby(groupby_var)
                    .apply(MdescBase.revalue_numeric,
                           col)
@@ -343,11 +344,11 @@ class MdescBase(six.with_metaclass(ABCMeta,
                    .groupby([groupby_var, col])
                    .apply(self._transform_func,
                           groupby_var=groupby_var,
-                          col=col)
+                          col=col,
+                          output_df=kwargs.get('output_df', False))
                    .reset_index(drop=True)
                    .fillna('nan')
                    .round(self.round_num))
-
             out = ('res', res)
 
         else:

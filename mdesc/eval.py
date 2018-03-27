@@ -53,7 +53,8 @@ class ErrorViz(MdescBase):
     def _transform_func(self,
                         group,
                         groupby_var='Type',
-                        col=None):
+                        col=None,
+                        output_df=False):
         error_arr = group['errors'].values
         # subtract errors from group median
         if self.model_type == 'classification':
@@ -72,8 +73,9 @@ class ErrorViz(MdescBase):
 
         # fmt and append agg_df to instance attribute
         # agg_df
-        self._fmt_agg_df(col=col,
-                         agg_errors=agg_errors)
+        if output_df:
+            self._fmt_agg_df(col=col,
+                             agg_errors=agg_errors)
 
         return agg_errors
 
@@ -186,7 +188,8 @@ class SensitivityViz(MdescBase):
     def _transform_func(self,
                         group,
                         groupby_var='Type',
-                        col=None):
+                        col=None,
+                        output_df=False):
         """
         transform slice of data by separating our pos/neg errors, aggregating up to the mean of the slice
         and returning transformed dataset
@@ -201,24 +204,27 @@ class SensitivityViz(MdescBase):
                                                                                                             group.shape))
 
         # append raw_df to instance attribute raw_df
-        self._fmt_raw_df(col=col,
-                         groupby_var=groupby_var,
-                         cur_group=group)
+        if output_df:
+            self._fmt_raw_df(col=col,
+                             groupby_var=groupby_var,
+                             cur_group=group)
         # aggregate errors
         agg_errors = pd.DataFrame({col: group[col].mode(),
                                    'groupByValue': group[groupby_var].mode(),
                                    'groupByVarName': groupby_var,
                                    'predictedYSmooth': np.nanmedian(group['diff'])}, index=[0])
 
-        # fmt and append agg_df to instance attribute
+        # fmt and append agg_df to instance
         # agg_df
-        self._fmt_agg_df(col=col,
-                         agg_errors=agg_errors)
+        if output_df:
+            self._fmt_agg_df(col=col,
+                             agg_errors=agg_errors)
 
         return agg_errors
 
     def run(self,
             output_type='html',
+            progbar=True,
             **kwargs):
         """
         main run engine. Iterate over columns specified in keepfeaturelist,
@@ -254,11 +260,11 @@ class SensitivityViz(MdescBase):
         # and incremental val
         preds_container = self._preds_container(to_iter)
         # import pbar
-        pbar = md_utils.progress_bar()
-        progress_bar = pbar(total=len(all_iter))
+        if progbar:
+            pbar = md_utils.progress_bar()
+            progress_bar = pbar(total=len(all_iter))
 
         for idx, (col, groupby_var) in enumerate(all_iter, 1):
-            print('Col: {} -- Groupby: {}'.format(col, groupby_var))
             col_indices = [col, 'errors', 'predictedYSmooth', groupby_var, 'diff']
 
             # pull incremental val, diff, and mask from container
@@ -269,7 +275,8 @@ class SensitivityViz(MdescBase):
 
             key, value = self._base_runner(self._cat_df.loc[mask, col_indices],
                                            col,
-                                           groupby_var)
+                                           groupby_var,
+                                           **kwargs)
             # assign incremental value for output formatting
             if key == 'res':
                 value['incremental_val'] = incremental_val
@@ -277,8 +284,8 @@ class SensitivityViz(MdescBase):
             placeholder[key].append(value)
 
             #logger.info("""Run processed - Col: {} - groupby_var: {}""".format(col, groupby_var))
-
-            progress_bar.update(1)
+            if progbar:
+                progress_bar.update(1)
 
         # convert placeholders to final output
         self._plc_hldr_out(placeholder['insights'],
@@ -331,7 +338,6 @@ class SensitivityViz(MdescBase):
         else:
             # switch modal column for predictions and subset
             # rows that are not already the mode value
-            print('Switch modal dummy')
             incremental_val, copydf, mask = pandas_switch_modal_dummy(col,
                                                                     self._cat_df,
                                                                     copydf)
