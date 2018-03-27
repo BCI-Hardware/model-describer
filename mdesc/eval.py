@@ -237,6 +237,13 @@ class SensitivityViz(MdescBase):
         :return: pd.DataFrame or saved html output
         :rtype: pd.DataFrame or .html
         """
+        # if output_type is a data format, force output_df to True and throw warning
+        if output_type in ['raw_data', 'agg_data'] and kwargs.get('output_df') == False:
+            kwargs['output_df'] = True
+            raise Warning("""output_df must be set to True when returning dataframe. Forcing 
+                            to true""")
+
+
         self._validate_params()
         # run the prediction function first to assign the errors to the dataframe
         self._cat_df = fmt_sklearn_preds(self.predict_engine,
