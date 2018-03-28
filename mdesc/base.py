@@ -171,6 +171,16 @@ class MdescBase(six.with_metaclass(ABCMeta,
                         groupby_var='Type',
                         col=None,
                         output_df=False):
+        """
+        aggregate and format measures within slices of data for final output
+
+        :param group: current slice of dataframe
+        :param groupby_var: str - groupby variable
+        :param col: str - column being operated on
+        :param output_df: bool - build and track raw_df and agg_df
+        :return: formatted and aggregated final output dataframe
+        :rtype: pd.DataFrame
+        """
         pass
 
     def _create_preds(self,
