@@ -1,6 +1,4 @@
 # ipython notebooks
-/docs/.ipynb_checkpoints/
-.ipynb_checkpoints
 *.ipynb_checkpoints
 
 # Compiled python modules.
@@ -9,7 +7,6 @@
 # cache files
 .cache
 /.cache
-/.cache
 
 # Setuptools distribution folder.
 /dist/
@@ -17,6 +14,10 @@
 # ignore debug folder
 /debug/*
 debug/*
+
+# ignore pytest_cache
+.pytest_cache/*
+.pytest_cache
 
 #__pycache__
 /mdesc/__pycache__/
@@ -32,6 +33,9 @@ debug/*
 ### PyCharm ###
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio and Webstorm
 # Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
+
+# ignore collateral
+/collateral*
 
 # User-specific stuff:
 .idea/workspace.xml

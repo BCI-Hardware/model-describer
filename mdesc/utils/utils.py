@@ -5,7 +5,7 @@ import logging
 import sys
 import random
 import numpy as np
-import io
+import pip
 
 from sklearn.datasets import make_blobs, make_regression
 import pandas as pd
@@ -220,6 +220,7 @@ def create_accuracy(model_type,
     # append to insights_df
     return acc
 
+
 def util_logger(name):
     """
     general logging framework
@@ -238,13 +239,40 @@ def util_logger(name):
     logger.setLevel(logging.DEBUG)
     return logger
 
-def sysprint(message):
-    """
-    print message to console
 
-    :param message: str - message to print
-    :return: sys.stdout
-    :rtype: sys.stdout.write()
+class SysBar(object):
+
+    def __init__(self, total):
+        self.total = float(total)
+        self.status = 0.0
+
+    def update(self, val):
+        self.status += float(val)
+        # print message
+        percent_complete = round((self.status / self.total) * 100, 0)
+        sys.stdout.write('\rPercent Complete: {}%'.format(percent_complete))
+        # sys.stdout.flush()
+
+    def close(self):
+        pass
+
+    def refresh(self):
+        sys.stdout.flush()
+
+
+def progress_bar():
     """
-    sys.stdout.write('\r{}'.format(message))
-    sys.stdout.flush()
+    check current environment and return appropritate progressbar.
+    If tqdm installed, return tqdm.tqdm otherwise SysBar
+
+    :return: progressbar
+    """
+    try:
+        import tqdm
+        # workaround for set changed size error
+        # https://github.com/tqdm/tqdm/issues/481
+        tqdm.tqdm.monitor_interval = 0
+        return tqdm.tqdm
+    except ImportError:
+        return SysBar
+

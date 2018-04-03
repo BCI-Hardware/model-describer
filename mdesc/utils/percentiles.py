@@ -11,7 +11,6 @@ def create_group_percentiles(df,
                              round_num=2):
     """
     create percentiles based on groupby variable
-
     :param df: dataframe to create percentiles from
     :param groupbyvars: list of groupby variables
     :param wanted_percentiles: list of desired percentiles
@@ -55,7 +54,6 @@ def create_group_percentiles(df,
     final_out['Data'] = final_list
     return final_out
 
-
 def create_percentile_vecs(input_var,
                            percentiles=None):
     """
@@ -92,7 +90,7 @@ class Percentiles(object):
     def __init__(self,
                  df,
                  groupbyvars,
-                 round_num=2):
+                 round_num=4):
         """
         Percentiles creates and holds percentile information for dataframe object
 

@@ -63,8 +63,9 @@ class TestWBBaseMethods(unittest.TestCase):
 
         self.wine = wine
 
-    def test_transform_function_predictedYSmooth(self):
-        """test predictedYSmooth present after _transform_function called"""
+    def test_transform_func_predictedYSmooth(self):
+        """test predictedYSmooth present after _transform_func called"""
+        self.WB._validate_params()
 
         group = self.wine.groupby('Type').get_group('White')
 
@@ -74,18 +75,18 @@ class TestWBBaseMethods(unittest.TestCase):
 
         col = 'density'
 
-        res = self.WB._transform_function(group,
+        res = self.WB._transform_func(group,
                                           col=col,
-                                          vartype='Continuous',
                                           groupby_var='Type')
 
         self.assertIn('predictedYSmooth',
                       res.columns.tolist(),
                       """predictedYSmooth not present in output df after
-                      _transform_function called""")
+                      _transform_func called""")
 
-    def test_transform_function_predictedYSmooth_val(self):
+    def test_transform_func_predictedYSmooth_val(self):
         """test median predictedYSmooth is returned after transform_function called"""
+        self.WB._validate_params()
 
         group = self.wine.groupby('Type').get_group('White')
 
@@ -97,17 +98,17 @@ class TestWBBaseMethods(unittest.TestCase):
 
         col = 'density'
 
-        res = self.WB._transform_function(group,
+        res = self.WB._transform_func(group,
                                           col=col,
-                                          vartype='Continuous',
                                           groupby_var='Type')
 
-        self.assertEqual(res['predictedYSmooth'].values.tolist()[0],
+        self.assertEqual(round(res['predictedYSmooth'].values.tolist()[0], GLOBAL_ROUND),
                          round(correct, GLOBAL_ROUND),
                          """unexpected value for predictedYSmooth - should be median default""")
 
-    def test_transform_function_errPos_val(self):
-        """test median errPos present after _transform_function called"""
+    def test_transform_func_errPos_val(self):
+        """test median errPos present after _transform_func called"""
+        self.WB._validate_params()
 
         group = self.wine.groupby('Type').get_group('White')
 
@@ -119,18 +120,17 @@ class TestWBBaseMethods(unittest.TestCase):
 
         col = 'density'
 
-        res = self.WB._transform_function(group,
+        res = self.WB._transform_func(group,
                                           col=col,
-                                          vartype='Continuous',
                                           groupby_var='Type')
 
-        self.assertEqual(res['errPos'].values.tolist()[0],
+        self.assertEqual(round(res['errPos'].values.tolist()[0], GLOBAL_ROUND),
                          round(correct, GLOBAL_ROUND),
                          """unexpected value for errPos - should be median default""")
 
-    def test_transform_function_errNeg_val(self):
-        """test median errNeg present after _transform_function called"""
-
+    def test_transform_func_errNeg_val(self):
+        """test median errNeg present after _transform_func called"""
+        self.WB._validate_params()
         group = self.wine.groupby('Type').get_group('White')
 
         group['errors'] = np.random.uniform(-1, 1, group.shape[0])
@@ -141,16 +141,15 @@ class TestWBBaseMethods(unittest.TestCase):
 
         col = 'density'
 
-        res = self.WB._transform_function(group,
+        res = self.WB._transform_func(group,
                                           col=col,
-                                          vartype='Continuous',
                                           groupby_var='Type')
 
-        self.assertEqual(res['errNeg'].values.tolist()[0],
+        self.assertEqual(round(res['errNeg'].values.tolist()[0], GLOBAL_ROUND),
                          round(correct, GLOBAL_ROUND),
                          """unexpected value for errNeg - should be median default""")
 
-    def test_transform_function_errPos_classification(self):
+    def test_transform_func_errPos_classification(self):
         """test correct errPos output from transform_func in classification context"""
         self.WB.model_type = 'classification'
         # get copy of group
@@ -168,19 +167,18 @@ class TestWBBaseMethods(unittest.TestCase):
 
         col = 'density'
 
-        res = self.WB._transform_function(group,
+        res = self.WB._transform_func(group,
                                      col=col,
-                                     vartype='Continuous',
                                      groupby_var='Type')
 
         correct = np.nanmedian(errPos)
 
-        self.assertEqual(res['errPos'].values.tolist()[0],
+        self.assertEqual(round(res['errPos'].values.tolist()[0], GLOBAL_ROUND),
                          round(correct, GLOBAL_ROUND),
                          """transform_func classification not returning 
                          correct aggregate value for errPos""")
 
-    def test_transform_function_errNeg_classification(self):
+    def test_transform_func_errNeg_classification(self):
         """test correct errPos output from transform_func in classification context"""
         self.WB.model_type = 'classification'
         # get copy of group
@@ -198,27 +196,14 @@ class TestWBBaseMethods(unittest.TestCase):
 
         col = 'density'
 
-        res = self.WB._transform_function(group,
+        res = self.WB._transform_func(group,
                                      col=col,
-                                     vartype='Continuous',
                                      groupby_var='Type')
 
         correct = np.nanmedian(errNeg)
 
-        self.assertEqual(res['errNeg'].values.tolist()[0],
+        self.assertEqual(round(res['errNeg'].values.tolist()[0], GLOBAL_ROUND),
                          round(correct, GLOBAL_ROUND),
                          """transform_func classification not returning 
                          correct aggregate value for errNeg""")
 
-    def test_var_check_output(self):
-        """test return of json like object after var_check run"""
-
-        self.WB._cat_df['errors'] = np.random.uniform(-1, 1, self.WB._cat_df.shape[0])
-        self.WB._cat_df['predictedYSmooth'] = np.random.uniform(-1, 1, self.WB._cat_df.shape[0])
-
-        out = self.WB._var_check('fixed acidity',
-                      'Type')
-
-        self.assertIsInstance(out,
-                              dict,
-                              """var_check didn't return json like object after run""")

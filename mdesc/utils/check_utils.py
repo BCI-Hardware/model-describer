@@ -70,38 +70,6 @@ class CheckInputs(object):
         except Exception as e:
             raise TypeError(wb_utils.ErrorWarningMsgs.error_msgs['agg_func'].format(e))
 
-        return aggregate_func
-
-    @staticmethod
-    def check_verbose(verbose):
-        """
-        assign user defined verbosity level to logging
-        :param verbose: verbosity level
-        :return: NA
-        """
-        if verbose:
-
-            if verbose not in [0, 1, 2]:
-                raise ValueError(
-                    """Verbose flag must be set to 
-                    level 0, 1 or 2.
-                    \nLevel 0: Debug
-                    \nLevel 1: Warning
-                    \nLevel 2: Info""")
-
-            # create log dict
-            log_dict = {None: logging.NOTSET,
-                        0: logging.DEBUG,
-                        1: logging.WARNING,
-                        2: logging.INFO}
-
-            logging.basicConfig(
-                format="""%(asctime)s:[%(filename)s:%(lineno)s - 
-                                        %(funcName)20s()]
-                                        %(levelname)s:\n%(message)s""",
-                level=log_dict[verbose])
-            logging.info("Logger started....")
-
     @staticmethod
     def check_cat_df(cat_df, model_df):
         """
@@ -118,6 +86,7 @@ class CheckInputs(object):
             warnings.warn(wb_utils.ErrorWarningMsgs.warning_msgs['cat_df'])
             cat_df = model_df.copy(deep=True)
         else:
+            cat_df = cat_df.copy(deep=True).reset_index(drop=True)
             # check both model_df and cat_df have the same length
             check_consistent_length(cat_df, model_df)
             # check index's are equal
@@ -125,6 +94,14 @@ class CheckInputs(object):
                 raise ValueError("""Indices of cat_df and model_df are not aligned. Ensure Index's are 
                                             \nexactly the same before WhiteBox use.""")
             # reset users index in case of multi index or otherwise
+
+        # finally check is any missing values exist and are untreated
+        missing = cat_df.isnull().sum()
+        # pull col names and count of missing values for columns that have missing
+        missing = missing[missing > 0].to_dict()
+        if len(missing) > 0:
+            raise ValueError("""cat_df has missing values - resolve missing values for columns: {}""".format(missing))
+
         return cat_df
 
     @staticmethod
@@ -139,5 +116,3 @@ class CheckInputs(object):
         # basic parameter checks
         if not hasattr(modelobject, 'predict'):
             raise ValueError(wb_utils.ErrorWarningMsgs.error_msgs['modelobj'])
-
-        return modelobject

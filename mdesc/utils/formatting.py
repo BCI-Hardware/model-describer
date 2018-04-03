@@ -5,13 +5,14 @@ import pkg_resources
 import warnings
 
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 import numpy as np
 
 
 def autoformat_types(inputdf):
     """
-    cast dtype category to strings - convert integers to floats
-    for python 2 integer formatting as long - 1L doesnt render in HTML
+    cast dtype category to strings - cast integers to float to avoid python2
+    error of representing integers in long format, i.e. 10L
 
     :param inputdf: dataframe input
     :return: dataframe output categories casted as strings
@@ -21,9 +22,10 @@ def autoformat_types(inputdf):
     catcols = inputdf.select_dtypes(include=['category']).columns
     inputdf[catcols] = inputdf[catcols].apply(lambda x: x.astype(str))
 
-    # format numeric columns
+    # cast numbers as floats
     numcols = inputdf.select_dtypes(include=[np.number]).columns
     inputdf[numcols] = inputdf[numcols].apply(lambda x: x.astype(float))
+
     return inputdf
 
 def subset_input(input_df,
@@ -93,6 +95,7 @@ class FmtJson(object):
             used to construct synthetic data
         :param err_type: User defined error type
         :param ydepend: str dependent variable
+        :param mod_type: str model type (classification|regression)
         :return: formatted json output
         :rtype: dict
         """
@@ -157,6 +160,46 @@ class FmtJson(object):
         assert isinstance(toreturn, dict), """flatten_json output object not of class dict.
                                             \nOutput class type: {}""".format(type(toreturn))
         return toreturn
+
+    @staticmethod
+    def align_out(allres,
+                  html_type):
+        """
+        align list of output dataframes by processed variable
+
+        :param allres: list of dataframes
+        :param html_type:
+        :return: dict of aligned outputs key=variable name, value=dataframe
+        :rtype: dict
+        """
+        aligned = {}
+        fixedcols = ['errNeg', 'errPos', 'groupByValue', 'groupByVarName', 'predictedYSmooth',
+                     'incremental_val']
+        for i in allres:
+            missing_col = [col for col in i.columns if col not in fixedcols][0]
+            if is_numeric_dtype(i.loc[:, missing_col]):
+                vartype = 'Continuous'
+            else:
+                vartype = 'Categorical'
+            i['vartype'] = vartype
+            if missing_col in list(aligned.keys()):
+                aligned[missing_col] = aligned[missing_col].append(i)
+            else:
+                aligned[missing_col] = i
+
+        aligned_json = []
+        for k, v in aligned.items():
+            vartype = v['vartype'].values[0]
+            incremental_val = v['incremental_val'].values[0] if 'incremental_val' in v.columns else None
+            del v['vartype']
+            if incremental_val:
+                del v['incremental_val']
+            json_out = FmtJson.to_json(v,
+                                       vartype=vartype,
+                                       html_type=html_type,
+                                       incremental_val=incremental_val)
+            aligned_json.append(json_out)
+        return aligned_json
 
 
 class HTML(object):
