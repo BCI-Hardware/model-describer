@@ -115,7 +115,7 @@ class ErrorViz(MdescBase):
         placeholder = {'res': [],
                        'insights': []}
 
-        logging.info("""Running main program. Iterating over 
+        logger.info("""Running main program. Iterating over 
                             columns and applying functions depednent on datatype""")
 
         not_in_cols = ['errors', 'predictedYSmooth', self.ydepend]
@@ -139,7 +139,7 @@ class ErrorViz(MdescBase):
 
             placeholder[key].append(value)
 
-            #logger.info("""Run processed - Col: {} - groupby_var: {}""".format(col, groupby_var))
+            logger.info("""Run processed - Col: {} - groupby_var: {}""".format(col, groupby_var))
 
             progress_bar.update(1)
 
@@ -236,7 +236,7 @@ class SensitivityViz(MdescBase):
 
     def run(self,
             output_type='html',
-            progbar=True,
+            progbar=False,
             **kwargs):
         """
         main run engine. Iterate over columns specified in keepfeaturelist,
@@ -246,6 +246,7 @@ class SensitivityViz(MdescBase):
                 raw_data - return raw analysis dataframe
                 agg_data - return aggregate analysis dataframe
         :param output_path: - fpath to save output
+        :param progbar: bool - output progress bar messages
         :return: pd.DataFrame or saved html output
         :rtype: pd.DataFrame or .html
         """
@@ -268,7 +269,7 @@ class SensitivityViz(MdescBase):
         placeholder = {'res': [],
                        'insights': []}
 
-        logging.info("""Running main program. Iterating over 
+        logger.info("""Running main program. Iterating over 
                             columns and applying functions depednent on datatype""")
 
         # filter cols to iterate over
@@ -368,3 +369,4 @@ class SensitivityViz(MdescBase):
         diff = new_preds - self._cat_df['predictedYSmooth']
 
         return incremental_val, diff, mask
+
