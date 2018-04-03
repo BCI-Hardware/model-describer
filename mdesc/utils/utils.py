@@ -220,6 +220,7 @@ def create_accuracy(model_type,
     # append to insights_df
     return acc
 
+
 def util_logger(name):
     """
     general logging framework
