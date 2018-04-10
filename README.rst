@@ -204,5 +204,6 @@ Thanks to `Kenton Andersen <https://www.linkedin.com/in/kentonandersen/>`_ for h
 
 - `Shanti Jha <https://www.linkedin.com/in/shantijha/>`_
 - `Brian Ray <https://www.linkedin.com/in/brianray/>`_
+- `Jim Guszcza <https://www.linkedin.com/in/jim-guszcza-5330375/>`_
  
 Please drop us a line in the issues section as bugs or feature requests arise. 
