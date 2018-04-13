@@ -96,10 +96,10 @@ Requirements
 
 model-describer requires:
 
-- numpy==1.14.0
-- pandas==0.19.2
-- scikit-learn==0.19.1
-- scipy==1.0.0
+- numpy >= 1.14.0 
+- pandas >= 0.22.0 
+- scikit-learn >= 0.19.1 
+- scipy >= 1.0.0
 
 Helpful Tips
 ===============
@@ -204,5 +204,6 @@ Thanks to `Kenton Andersen <https://www.linkedin.com/in/kentonandersen/>`_ for h
 
 - `Shanti Jha <https://www.linkedin.com/in/shantijha/>`_
 - `Brian Ray <https://www.linkedin.com/in/brianray/>`_
+- `Jim Guszcza <https://www.linkedin.com/in/jim-guszcza-5330375/>`_
  
 Please drop us a line in the issues section as bugs or feature requests arise. 
