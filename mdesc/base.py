@@ -85,7 +85,7 @@ class MdescBase(six.with_metaclass(ABCMeta,
         :param verbose: set verbose level -- 0 = debug, 1 = warning, 2 = error
         """
         logger.setLevel(md_utils.Settings.verbose2log[verbose])
-        logger.info('Initilizing {} class parmaetres'.format(self.__class__.__name__))
+        logger.info('Initilizing {} class parameters'.format(self.__class__.__name__))
 
         super(MdescBase, self).__init__(
                                         cat_df,

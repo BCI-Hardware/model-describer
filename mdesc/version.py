@@ -5,7 +5,7 @@
 AUTHOR = """Jason Lewris, Daniel Byler, Venkat Gangavarapu, Shruti Panda"""
 CREDITS = ["Brian Ray, Kenton Anderson, Shanti Jha"]
 LICENSE = "MIT"
-VERSION = "0.1.2.1"
+VERSION = "0.1.2.2"
 MAINTAINER = "Jason Lewris"
 EMAIL = "jlewris@deloitte.com"
 STATUS = "Beta"

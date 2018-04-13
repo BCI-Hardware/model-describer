@@ -5,7 +5,6 @@ import logging
 import sys
 import random
 import numpy as np
-import pip
 
 from sklearn.datasets import make_blobs, make_regression
 import pandas as pd

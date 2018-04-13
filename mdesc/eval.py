@@ -37,6 +37,9 @@ class ErrorViz(MdescBase):
         :param autoformat: experimental autoformatting of dataframe
         :param verbose: Logging level
         """
+        logger.setLevel(md_utils.Settings.verbose2log[kwargs.get('verbose', None)])
+        logger.info('Initilizing {} class parameters'.format(self.__class__.__name__))
+
         super(ErrorViz, self).__init__(
                                             modelobj,
                                             model_df,
@@ -91,6 +94,7 @@ class ErrorViz(MdescBase):
 
     def run(self,
             output_type='html',
+            progbar=False,
             **kwargs):
         """
         main run engine. Iterate over columns specified in keepfeaturelist,
@@ -100,6 +104,7 @@ class ErrorViz(MdescBase):
                 raw_data - return raw analysis dataframe
                 agg_data - return aggregate analysis dataframe
         :param output_path: - fpath to save output
+        :param progbar: boolean output progress bar
         :return: pd.DataFrame or saved html output
         :rtype: pd.DataFrame or .html
         """
@@ -126,8 +131,9 @@ class ErrorViz(MdescBase):
         # create combinations of groupby and columns
         all_iter = list(itertools.product(to_iter_cols, self.groupbyvars))
 
-        pbar = md_utils.progress_bar()
-        progress_bar = pbar(total=len(all_iter))
+        if progbar:
+            pbar = md_utils.progress_bar()
+            progress_bar = pbar(total=len(all_iter))
 
         for (col, groupby_var) in itertools.product(to_iter_cols, self.groupbyvars):
 
@@ -141,7 +147,8 @@ class ErrorViz(MdescBase):
 
             logger.info("""Run processed - Col: {} - groupby_var: {}""".format(col, groupby_var))
 
-            progress_bar.update(1)
+            if progbar:
+                progress_bar.update(1)
 
         # convert placeholders to final output
         self._plc_hldr_out(placeholder['insights'],
@@ -351,7 +358,7 @@ class SensitivityViz(MdescBase):
         copydf = self._model_df.copy(deep=True)
         if is_numeric_dtype(self._cat_df.loc[:, col]):
             incremental_val = copydf[col].std() * self.std_num
-            # tweak the currently column by the incremental_val
+            # tweak the current column by the incremental_val
             copydf[col] = copydf[col] + incremental_val
             mask = pd.Series([True] * copydf.shape[0])
 
