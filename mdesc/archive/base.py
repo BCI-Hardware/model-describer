@@ -8,6 +8,7 @@ import six
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
+from sklearn.base import BaseEstimator, TransformerMixin
 
 from mdesc.utils import utils as md_utils
 from mdesc.utils import check_utils as checks
@@ -18,37 +19,84 @@ from mdesc.utils import formatting
 logger = md_utils.util_logger(__name__)
 
 
-class PrettyListMixn(object):
-    """
-    class mix-in for pretty printing of class attrs
-    """
 
-    def _getnames(self):
-        """
-        Retrieve class attributes
+# TODO Base Base class
+class MdescBase(BaseEstimator,
+                TransformerMixin):
 
-        :return: str - formatted class attributes
-        :rtype: str
-        """
-        return ''.join(['\t{}={}\n'.format(attr, self.__dict__[attr])
-                        for attr in sorted(self.__dict__)
-                        if not isinstance(self.__dict__[attr], pd.DataFrame)])
+    def __init__(self, modelobj):
+        pass
 
-    def __str__(self):
-        """
-        represent class attributes
+    def fit(self, X, y=None, **kwargs):
+        pass
 
-        :return: str - formatted class attributes
-        :rtype: str
+    def fit_transform(self, X, y=None, **kwargs):
         """
-        return '<Instance of {}, address: {}\n{}>'.format(self.__class__.__name__,
-                                                          id(self),
-                                                          self._getnames())
+        fit the model according to the given training data
+        :param X:
+        :param y:
+        :param kwargs:
+        :return:
+        """
+        pass
+
+    def _base_runner(self,
+                     df,
+                     col,
+                     groupby_var,
+                     **kwargs):
+        """
+        Push grouping and iteration construct to core pandas. Normalize each column
+        (leave categories as is and convert numeric cols to percentile bins). Apply
+        transform function, and format final outputs.
+
+        :param df: pd.DataFrame
+        :param col: str - column currently being operated on
+        :param groupby_var: str - groupby level
+        :return: tuple of transformed data (return type, return data)
+        :rtype: tuple
+        """
+        if col != groupby_var:
+            res = (df.groupby(groupby_var)
+                   .apply(MdescBase.revalue_numeric,
+                          col)
+                   .reset_index(drop=True)
+                   .groupby([groupby_var, col])
+                   .apply(self._transform_func,
+                          groupby_var=groupby_var,
+                          col=col,
+                          output_df=kwargs.get('output_df', False))
+                   .reset_index(drop=True)
+                   .fillna('nan')
+                   .round(self.round_num))
+            out = ('res', res)
+
+        else:
+            logging.info(
+                """Creating accuracy metric for 
+                groupby variable: {}""".format(groupby_var))
+            # create error metrics for slices of groupby data
+            acc = md_utils.create_accuracy(self.model_type,
+                                           self._cat_df,
+                                           self.error_type,
+                                           groupby=groupby_var)
+            # append to insights dataframe placeholder
+            out = ('insights', acc)
+
+        return out
+
+
+# TODO base class regressor
+
+# TODO base class classification
+
+
+
 
 
 class MdescBase(six.with_metaclass(ABCMeta,
                                    percentiles.Percentiles,
-                                   PrettyListMixn)):
+                                   BaseEstimator)):
 
     @abstractmethod
     def __init__(
@@ -56,14 +104,7 @@ class MdescBase(six.with_metaclass(ABCMeta,
             modelobj,
             model_df,
             ydepend,
-            cat_df=None,
-            groupbyvars=None,
-            keepfeaturelist=None,
-            aggregate_func=np.nanmedian,
-            error_type='RMSE',
-            autoformat_types=False,
-            round_num=4,
-            verbose=None):
+            **kwargs):
         """
         MdescBase base class instantiation and parameter checking
 
@@ -108,6 +149,10 @@ class MdescBase(six.with_metaclass(ABCMeta,
             self._cat_df = formatting.autoformat_types(self._cat_df)
 
     def _validate_params(self):
+        """
+        private function to valide class attributes
+        :return: NA
+        """
         # check featurelist
         self._keepfeaturelist = checks.CheckInputs.check_keepfeaturelist(self._keepfeaturelist,
                                                                          self._cat_df)
@@ -165,24 +210,6 @@ class MdescBase(six.with_metaclass(ABCMeta,
 
         return data
 
-    @abstractmethod
-    def _transform_func(self,
-                        group,
-                        groupby_var='Type',
-                        col=None,
-                        output_df=False):
-        """
-        aggregate and format measures within slices of data for final output
-
-        :param group: current slice of dataframe
-        :param groupby_var: str - groupby variable
-        :param col: str - column being operated on
-        :param output_df: bool - build and track raw_df and agg_df
-        :return: formatted and aggregated final output dataframe
-        :rtype: pd.DataFrame
-        """
-        pass
-
     def _create_preds(self,
                       df):
         """
@@ -199,12 +226,6 @@ class MdescBase(six.with_metaclass(ABCMeta,
             preds = self.predict_engine(df)
 
         return preds
-
-    @abstractmethod
-    def run(self,
-            output_type='html',
-            **kwargs):
-        pass
 
     def _plc_hldr_out(self,
                       insights_list,
@@ -245,135 +266,8 @@ class MdescBase(six.with_metaclass(ABCMeta,
         # assign placeholder final outputs to class instance
         self.outputs = final_output
 
-    def _fmt_raw_df(self,
-                    col,
-                    groupby_var,
-                    cur_group):
-        """
-        format raw_df by renaming various columns and appending to instance
-        raw_df
 
-        :param col: str current col being operated on
-        :param groupby_var: str current groupby variable
-        :param cur_group: current slice of group data
-        :return: Formatted dataframe
-        :rtype: pd.DataFrame
-        """
-        logger.info(
-            """Formatting specifications - col: {} - groupbvy_var: {} - cur_group shape: {}""".format(col, groupby_var,
-                                                                                                      cur_group.shape))
 
-        # take copy
-        group_copy = cur_group.copy(deep=True)
-        # reformat current slice of data for raw_df
-        raw_df = group_copy.rename(columns={col: 'col_value',
-                                            groupby_var: 'groupby_level'}).reset_index(drop=True)
-
-        raw_df['groupByVar'] = groupby_var
-        raw_df['col_name'] = col
-        if 'fixed_bins' in raw_df.columns:
-            del raw_df['fixed_bins']
-
-        # self.raw_df = self.raw_df.append(raw_df)
-        self.raw_df = pd.concat([self.raw_df, raw_df])
-
-    def _fmt_agg_df(self,
-                    col,
-                    agg_errors):
-        """
-        format agg_df by renaming various columns and appending to
-        instance agg_df
-
-        :param col: str current col being operated on
-        :param agg_errors: aggregated error data for group
-        :return: Formatted dataframe
-        :rtype: pd.DataFrame
-        """
-
-        logger.info("""Formatting specifications - col: {} - agg_errors shape: {}""".format(col, agg_errors.shape))
-
-        group_copy = agg_errors.copy(deep=True)
-        debug_df = group_copy.rename(columns={col: 'col_value'})
-        debug_df['col_name'] = col
-        # self.agg_df = self.agg_df.append(debug_df)
-        self.agg_df = pd.concat([self.agg_df, debug_df])
-
-    def _save(self,
-              output_type,
-              **kwargs):
-        """
-        save html output to disc
-
-        :param fpath: file path to save html file to
-        """
-        if output_type == 'html':
-            logging.info("""creating html output for type: {}""".format(md_utils.Settings.html_type[self.called_class]))
-
-            # tweak self.ydepend if classification case (add dominate class)
-            if self.model_type == 'classification':
-                ydepend_out = '{}: {}'.format(self.ydepend, self._modelobj.classes_[1])
-            else:
-                # regression case
-                ydepend_out = self.ydepend
-
-            # create HTML output
-            html_out = formatting.HTML.fmt_html_out(
-                str(self.outputs),
-                ydepend_out,
-                htmltype=md_utils.Settings.html_type[self.called_class])
-            # save html_out to disk
-            with open(kwargs.get('fpath', ValueError('Must specify fpath when saving as html')), 'w') as outfile:
-                logging.info("""Writing html file out to disk""")
-                outfile.write(html_out)
-        if output_type == 'raw_data':
-            return self.raw_df
-        if output_type == 'agg_data':
-            return self.agg_df
-
-    def _base_runner(self,
-                     df,
-                     col,
-                     groupby_var,
-                     **kwargs):
-        """
-        Push grouping and iteration construct to core pandas. Normalize each column
-        (leave categories as is and convert numeric cols to percentile bins). Apply
-        transform function, and format final outputs.
-
-        :param df: pd.DataFrame
-        :param col: str - column currently being operated on
-        :param groupby_var: str - groupby level
-        :return: tuple of transformed data (return type, return data)
-        :rtype: tuple
-        """
-        if col != groupby_var:
-            res = (df.groupby(groupby_var)
-                   .apply(MdescBase.revalue_numeric,
-                          col)
-                   .reset_index(drop=True)
-                   .groupby([groupby_var, col])
-                   .apply(self._transform_func,
-                          groupby_var=groupby_var,
-                          col=col,
-                          output_df=kwargs.get('output_df', False))
-                   .reset_index(drop=True)
-                   .fillna('nan')
-                   .round(self.round_num))
-            out = ('res', res)
-
-        else:
-            logging.info(
-                """Creating accuracy metric for 
-                groupby variable: {}""".format(groupby_var))
-            # create error metrics for slices of groupby data
-            acc = md_utils.create_accuracy(self.model_type,
-                                           self._cat_df,
-                                           self.error_type,
-                                           groupby=groupby_var)
-            # append to insights dataframe placeholder
-            out = ('insights', acc)
-
-        return out
 
 
 

@@ -131,10 +131,6 @@ class ErrorViz(MdescBase):
         # create combinations of groupby and columns
         all_iter = list(itertools.product(to_iter_cols, self.groupbyvars))
 
-        if progbar:
-            pbar = md_utils.progress_bar()
-            progress_bar = pbar(total=len(all_iter))
-
         for (col, groupby_var) in itertools.product(to_iter_cols, self.groupbyvars):
 
             col_indices = [col, 'errors', 'predictedYSmooth', groupby_var]
@@ -144,11 +140,6 @@ class ErrorViz(MdescBase):
                                            groupby_var)
 
             placeholder[key].append(value)
-
-            logger.info("""Run processed - Col: {} - groupby_var: {}""".format(col, groupby_var))
-
-            if progbar:
-                progress_bar.update(1)
 
         # convert placeholders to final output
         self._plc_hldr_out(placeholder['insights'],
@@ -265,7 +256,7 @@ class SensitivityViz(MdescBase):
 
 
         self._validate_params()
-        # run the prediction function first to assign the errors to the dataframe
+        # run the prediction function first t)o assign the errors to the dataframe
         self._cat_df = fmt_sklearn_preds(self.predict_engine,
                                          self._modelobj,
                                          self._model_df,
@@ -286,10 +277,6 @@ class SensitivityViz(MdescBase):
         # create container with synthetic prediction difference, row mask,
         # and incremental val
         preds_container = self._preds_container(to_iter)
-        # import pbar
-        if progbar:
-            pbar = md_utils.progress_bar()
-            progress_bar = pbar(total=len(all_iter))
 
         for idx, (col, groupby_var) in enumerate(all_iter, 1):
             col_indices = [col, 'errors', 'predictedYSmooth', groupby_var, 'diff']
@@ -309,10 +296,6 @@ class SensitivityViz(MdescBase):
                 value['incremental_val'] = incremental_val
 
             placeholder[key].append(value)
-
-            #logger.info("""Run processed - Col: {} - groupby_var: {}""".format(col, groupby_var))
-            if progbar:
-                progress_bar.update(1)
 
         # convert placeholders to final output
         self._plc_hldr_out(placeholder['insights'],
