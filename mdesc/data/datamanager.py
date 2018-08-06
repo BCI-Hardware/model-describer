@@ -65,6 +65,23 @@ class DataUtilities(object):
         """reduce list of slice indices to common elements"""
         return reduce(np.intersect1d, args)
 
+    def _create_percentile_out(self, input_arr, feature_name,
+                               percentiles=None):
+
+        if percentiles is None:
+            percentiles = [0, 1, 10, 25, 50, 75, 90, 100]
+
+        all_percentiles = []
+        for p in percentiles:
+            percentile = '{}%'.format(p)
+            percentile_value = np.percentile(input_arr, p)
+            out = {'percentiles': percentile, 'value': percentile_value}
+            all_percentiles.append(out)
+
+        to_return = {'variable': feature_name,
+                     'percentileList': all_percentiles}
+
+        return to_return
 
 class DataManager(DataUtilities):
 
@@ -84,6 +101,7 @@ class DataManager(DataUtilities):
         self._X = self._check_X(X)
         self._y = self._check_y(y, X)
         self._groupby_df = self._check_groupby_df(groupby_df, X)
+        self.percentile_list = []
 
     def _format_labels(self, labels):
         if isinstance(labels, str) or labels is None:
@@ -235,7 +253,6 @@ class DataManager(DataUtilities):
             percentile_indices = row_indices[percentile_indices]
             yield (percentile_indices, percentile)
 
-
     def create_sub_groups(self):
         """
         create slices of full data based on grouping levels and percentiles of continuous values
@@ -248,10 +265,13 @@ class DataManager(DataUtilities):
 
             for idx, colname in enumerate(self.feature_names):
                 cur_arr = self._X[:, idx]
+
                 if self.isbinary(self._X[:, idx]):
                     # TODO add future support for categorical variables
                     continue
 
+                percentile = self._create_percentile_out(cur_arr, colname)
+                self.percentile_list.append(percentile)
                 percentile_generator = self.yield_continuous_percentile(full_input_arr=cur_arr,
                                                                         row_indices=group_indices)
 

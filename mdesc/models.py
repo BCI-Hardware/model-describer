@@ -39,6 +39,25 @@ class Eval(MetricMixin):
 
     def _create_errors(self, X, y,
                        original_preds=None):
+        """
+        construct error metrics based on difference between y_hat and y_true
+
+        For regression tasks, simply measure the difference between y_hat and y_true.
+        For classification tasks, get the predicted probability of falling in class 1.
+        Using the predicted probability, get the prediction accuracy against the true class.
+
+        If original_preds specified, measure the difference between new predictions and
+        original_predictions to develop sensitivity measures.
+
+        :param X: np.array - required
+            Input X array
+        :param y: np.array - required
+            Input y array
+        :param original_preds: np.array - optional
+            original prediction array
+        :return: np.array
+            array of error measures
+        """
 
         def unpack_preds():
             pred_proba_y = self.prediction_fn(X)
@@ -66,7 +85,8 @@ class Eval(MetricMixin):
                                     target_classes=self.target_classes,
                                     feature_names=self.feature_names,
                                     groupby_names=self.groupby_names,
-                                    model_type=self.model_type)
+                                    model_type=self.model_type,
+                                    )
 
         groups = self.data_set.create_sub_groups()
         return groups
@@ -98,14 +118,16 @@ class Eval(MetricMixin):
             col_name = group[2]
             percentile_value = group[3]
             percentile_indices = group[4]
+            y_slice = self.data_set.y[percentile_indices]
             self.construct_group_aggregates(self.data_set.X[percentile_indices],
                                             groupby_var=group_col,
                                             errors=errors[percentile_indices],
                                             group_level=group_level,
                                             x_value=percentile_value,
-                                            x_name=col_name)
+                                            x_name=col_name,
+                                            y_slice=y_slice)
 
-        self.results = pd.concat(self.data_container)
+        self.data_set.results = pd.concat(self.data_container)
         del self.data_container
 
     def fit_transform(self, X, y, groupby_df=None,
@@ -130,12 +152,12 @@ class Eval(MetricMixin):
         self.fit(X=X, y=y, groupby_df=groupby_df,
                  **kwargs)
 
-        return self.results
+        return self.data_set.results
 
     def construct_group_aggregates(self, group_data,
                                    groupby_var=None, group_level=None,
                                    errors=None, x_value=None,
-                                   x_name=None):
+                                   x_name=None, y_slice=None):
         """
         summarize group level slice of data
 
@@ -151,18 +173,54 @@ class Eval(MetricMixin):
             value of continuous variables (specific percentile)
         :param x_name: str - required
             feature name of X
+        :param y_slice: np.array - required
+            predicted y values for slice of data
         """
+
+        positive_errors = np.nanmedian(errors[errors >= 0])
+        negative_errors = np.nanmedian(errors[errors <= 0])
+
         errdf = pd.DataFrame({'groupByValue': group_level,
                               'groupByVarName': groupby_var,
                               self.error_type: self.metric_all(errors, metric=self.error_type),
                               'Total': float(group_data.shape[0]),
+                              'x_name': x_name,
                               'x_value': x_value,
-                              'x_name': x_name}, index=[0])
+                              'errPos': positive_errors,
+                              'errNeg': negative_errors,
+                              'predictedYSmooth': np.nanmean(y_slice)}, index=[0])
 
         self.data_container.append(errdf)
 
 
 class Sensitivity(Eval):
+    """
+
+    Examples
+    ---------
+    >>> import pandas as pd
+    >>> from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+    >>> from mdesc.models import Sensitivity
+
+    >>> modelObjc = RandomForestRegressor()
+    >>> # wine quality dataset example
+    >>> wine = pd.read_csv('debug/wine.csv')
+    >>> groupby_df = wine[['alcohol', 'Type']]
+    >>> ydepend = 'quality'
+    >>> X = wine.loc[:, wine.columns != ydepend]
+    >>> y = wine.loc[:, ydepend]
+    >>> X = pd.get_dummies(X)
+    >>> modelObjc.fit(X, y)
+    >>> # being sensitivity
+    >>> RE = Sensitivity(prediction_fn=modelObjc.predict,
+    >>>                      model_type='regression')
+    >>> res = RE.fit_transform(X=X, y=y)
+    >>> res.head()
+    MSE  Total groupByValue groupByVarName            x_name  x_value
+    0.040000    1.0         high        alcohol  volatile acidity    0.115
+    0.172500    4.0         high        alcohol  volatile acidity    0.160
+    0.245000    6.0         high        alcohol  volatile acidity    0.170
+    """
 
     def __init__(self, std=1, **kwargs):
 
@@ -170,6 +228,7 @@ class Sensitivity(Eval):
             warnings.warn("""Standard deviation number set above 3. Unreliable sensitivities
             are likely to occur. std: {}""".format(std))
         self.std = std
+        self.data_container = deque()
 
         super(Sensitivity, self).__init__(**kwargs)
 
@@ -225,6 +284,7 @@ class Sensitivity(Eval):
             col_name = group[2]
             percentile_value = group[3]
             percentile_indices = group[4]
+            y_slice = self.data_set.y[percentile_indices]
             col_idx = self.data_set.feature_names.index(col_name)
 
             self.construct_group_aggregates(self.data_set.X[percentile_indices],
@@ -232,7 +292,8 @@ class Sensitivity(Eval):
                                             errors=error_dict[col_idx][percentile_indices],
                                             group_level=group_level,
                                             x_value=percentile_value,
-                                            x_name=col_name)
+                                            x_name=col_name,
+                                            y_slice=y_slice)
 
-        self.results = pd.concat(self.data_container)
+        self.data_set.results = pd.concat(self.data_container)
         del self.data_container
