@@ -6,7 +6,7 @@ import numpy as np
 from collections import deque
 import warnings
 
-from mdesc.data.datamanager import DataManager
+from mdesc.data.datamanager import (DataManager, DataUtilities)
 from mdesc.utils.metrics import MetricMixin
 from mdesc.utils.mdesc_utils import prob_acc
 
@@ -79,7 +79,7 @@ class Eval(MetricMixin):
 
         return errors
 
-    def _make_data(self, X, y, groupby_df):
+    def _make_data(self, X, y, groupby_df, **kwargs):
         self.data_set = DataManager(X=X, y=y, groupby_df=groupby_df,
                                     target_name=self.target_names,
                                     target_classes=self.target_classes,
@@ -88,8 +88,15 @@ class Eval(MetricMixin):
                                     model_type=self.model_type,
                                     )
 
-        groups = self.data_set.create_sub_groups()
+        kwargs['error_type'] = self.error_type
+
+        groups = self.data_set.create_sub_groups(**kwargs)
         return groups
+
+    def _reset_state(self):
+        """create returnable results and reset container"""
+        self.data_set.results = pd.concat(self.data_container)
+        self.data_container = []
 
     def fit(self, X, y, groupby_df=None,
             errors=None):
@@ -110,25 +117,15 @@ class Eval(MetricMixin):
         if errors is None:
             errors = self._create_errors(self.data_set.X, self.data_set.y)
 
-        groups = self._make_data(X, y, groupby_df)
+        groups = self._make_data(X, y, groupby_df, errors=errors)
 
         for group in groups:
-            group_level = group[0]
-            group_col = group[1]
-            col_name = group[2]
-            percentile_value = group[3]
-            percentile_indices = group[4]
-            y_slice = self.data_set.y[percentile_indices]
-            self.construct_group_aggregates(self.data_set.X[percentile_indices],
-                                            groupby_var=group_col,
-                                            errors=errors[percentile_indices],
-                                            group_level=group_level,
-                                            x_value=percentile_value,
-                                            x_name=col_name,
-                                            y_slice=y_slice)
+            group['y_slice'] = self.data_set.y[group['percentile_indices']]
+            self.construct_group_aggregates(self.data_set.X[group['percentile_indices']],
+                                            errors=errors[group['percentile_indices']],
+                                            **group)
 
-        self.data_set.results = pd.concat(self.data_container)
-        del self.data_container
+        self._reset_state()
 
     def fit_transform(self, X, y, groupby_df=None,
                       **kwargs):
@@ -154,10 +151,8 @@ class Eval(MetricMixin):
 
         return self.data_set.results
 
-    def construct_group_aggregates(self, group_data,
-                                   groupby_var=None, group_level=None,
-                                   errors=None, x_value=None,
-                                   x_name=None, y_slice=None):
+    def construct_group_aggregates(self, group_data, errors=None,
+                                   **kwargs):
         """
         summarize group level slice of data
 
@@ -180,49 +175,55 @@ class Eval(MetricMixin):
         positive_errors = np.nanmedian(errors[errors >= 0])
         negative_errors = np.nanmedian(errors[errors <= 0])
 
-        errdf = pd.DataFrame({'groupByValue': group_level,
-                              'groupByVarName': groupby_var,
+        errdf = pd.DataFrame({'groupByValue': kwargs['group_level'],
+                              'groupByVarName': kwargs['groupby_var'],
                               self.error_type: self.metric_all(errors, metric=self.error_type),
                               'Total': float(group_data.shape[0]),
-                              'x_name': x_name,
-                              'x_value': x_value,
+                              'x_name': kwargs['colname'],
+                              'x_value': kwargs['percentile_value'],
                               'errPos': positive_errors,
                               'errNeg': negative_errors,
-                              'predictedYSmooth': np.nanmean(y_slice)}, index=[0])
+                              'predictedYSmooth': np.nanmean(kwargs['y_slice']),
+                              'dtype': kwargs['dtype']}, index=[0])
 
         self.data_container.append(errdf)
 
 
 class Sensitivity(Eval):
-    """
-
-    Examples
-    ---------
-    >>> import pandas as pd
-    >>> from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-    >>> from mdesc.models import Sensitivity
-
-    >>> modelObjc = RandomForestRegressor()
-    >>> # wine quality dataset example
-    >>> wine = pd.read_csv('debug/wine.csv')
-    >>> groupby_df = wine[['alcohol', 'Type']]
-    >>> ydepend = 'quality'
-    >>> X = wine.loc[:, wine.columns != ydepend]
-    >>> y = wine.loc[:, ydepend]
-    >>> X = pd.get_dummies(X)
-    >>> modelObjc.fit(X, y)
-    >>> # being sensitivity
-    >>> RE = Sensitivity(prediction_fn=modelObjc.predict,
-    >>>                      model_type='regression')
-    >>> res = RE.fit_transform(X=X, y=y)
-    >>> res.head()
-    MSE  Total groupByValue groupByVarName            x_name  x_value
-    0.040000    1.0         high        alcohol  volatile acidity    0.115
-    0.172500    4.0         high        alcohol  volatile acidity    0.160
-    0.245000    6.0         high        alcohol  volatile acidity    0.170
-    """
 
     def __init__(self, std=1, **kwargs):
+        """
+
+
+        :param std: int|float - optional
+            standard deviation number to construct synthetic data
+        :param kwargs:
+
+        Examples
+        ---------
+        >>> import pandas as pd
+        >>> from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+        >>> from mdesc.models import Sensitivity
+
+        >>> modelObjc = RandomForestRegressor()
+        >>> # wine quality dataset example
+        >>> wine = pd.read_csv('debug/wine.csv')
+        >>> groupby_df = wine[['alcohol', 'Type']]
+        >>> ydepend = 'quality'
+        >>> X = wine.loc[:, wine.columns != ydepend]
+        >>> y = wine.loc[:, ydepend]
+        >>> X = pd.get_dummies(X)
+        >>> modelObjc.fit(X, y)
+        >>> # being sensitivity
+        >>> RE = Sensitivity(prediction_fn=modelObjc.predict,
+        >>>                      model_type='regression')
+        >>> res = RE.fit_transform(X=X, y=y)
+        >>> res.head()
+        MSE  Total groupByValue groupByVarName            x_name  x_value
+        0.040000    1.0         high        alcohol  volatile acidity    0.115
+        0.172500    4.0         high        alcohol  volatile acidity    0.160
+        0.245000    6.0         high        alcohol  volatile acidity    0.170
+        """
 
         if abs(std) > 3:
             warnings.warn("""Standard deviation number set above 3. Unreliable sensitivities
@@ -247,7 +248,7 @@ class Sensitivity(Eval):
 
         error_dict = {}
         for idx, fname in enumerate(self.data_set.feature_names):
-            if not self.data_set.isbinary(self.data_set.X[:, idx]):
+            if not DataUtilities.isbinary(self.data_set.X[:, idx]):
                 X_copy = np.copy(self.data_set.X)
                 X_copy[:, idx] = X_copy[:, idx] + (np.std(self.data_set.X[:, idx]) * self.std)
                 errors = self._create_errors(X_copy, self.data_set.y,
@@ -274,26 +275,18 @@ class Sensitivity(Eval):
         :return: pd.DataFrame
             transformed dataset
         """
-
-        groups = self._make_data(X, y, groupby_df)
+        original_errors = self._create_errors(X, y)
+        groups = self._make_data(X, y, groupby_df, errors=original_errors)
         error_dict = self._make_error_dict()
 
         for group in groups:
-            group_level = group[0]
-            group_col = group[1]
-            col_name = group[2]
-            percentile_value = group[3]
-            percentile_indices = group[4]
-            y_slice = self.data_set.y[percentile_indices]
-            col_idx = self.data_set.feature_names.index(col_name)
+            y_slice = self.data_set.y[group['percentile_indices']]
+            group['y_slice'] = y_slice
+            col_idx = np.where(self.data_set.feature_names == group['colname'])[0][0]
+            # col_idx = self.data_set.feature_names.index(col_name)
 
-            self.construct_group_aggregates(self.data_set.X[percentile_indices],
-                                            groupby_var=group_col,
-                                            errors=error_dict[col_idx][percentile_indices],
-                                            group_level=group_level,
-                                            x_value=percentile_value,
-                                            x_name=col_name,
-                                            y_slice=y_slice)
+            self.construct_group_aggregates(self.data_set.X[group['percentile_indices']],
+                                            errors=error_dict[col_idx][group['percentile_indices']],
+                                            **group)
 
-        self.data_set.results = pd.concat(self.data_container)
-        del self.data_container
+        self._reset_state()

@@ -153,6 +153,7 @@ class ErrorViz(MdescBase):
         if isinstance(outputs, pd.DataFrame):
             return outputs
 
+
 class SensitivityViz(MdescBase):
 
     def __init__(self,

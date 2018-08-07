@@ -5,27 +5,14 @@ import numpy as np
 from pandas.api.types import is_numeric_dtype
 
 from mdesc.utils import mdesc_exceptions
+from mdesc.utils.mdesc_utils import load_wine
+from mdesc.data.datavisualizer import DataVisualizer
+from mdesc.utils.metrics import MetricMixin
 
-
-def _revalue_numeric(input_arr):
-    """
-    convert input arr into percentile bins with percentile
-    represented by max value of group
-    """
-    if is_numeric_dtype(input_arr) and input_arr.shape[0] > 100:
-        percentile = np.percentile(input_arr, interpolation='higher',
-                                   q=list(range(100)))
-        idx = np.searchsorted(percentile, input_arr, side='left',
-                              sorter=np.argsort(percentile))
-        # remap values outside of range to max bin
-        idx[idx == 100] = 99
-        # return max value within percentile group
-        input_arr = percentile[idx]
-
-    return input_arr
 
 def is_in_jupyter():
-    """Check if user is running spaCy from a Jupyter notebook by detecting the
+    """
+    Check if user is running spaCy from a Jupyter notebook by detecting the
     IPython kernel. Mainly used for the displaCy visualizer.
     RETURNS (bool): True if in Jupyter, False if not.
     """
@@ -38,16 +25,18 @@ def is_in_jupyter():
         return False
     return False
 
+
 class DataUtilities(object):
 
-    def _revalue_numeric(self, input_arr):
+    @staticmethod
+    def _revalue_numeric(input_arr):
         """
         convert input arr into percentile bins with percentile
         represented by max value of group
         """
         if is_numeric_dtype(input_arr) and input_arr.shape[0] > 100:
-            percentile = np.percentile(input_arr, interpolation='higher',
-                                       q=list(range(100)))
+            percentile = np.nanpercentile(input_arr, interpolation='higher',
+                                          q=list(range(100)))
             idx = np.searchsorted(percentile, input_arr, side='left',
                                   sorter=np.argsort(percentile))
             # remap values outside of range to max bin
@@ -57,15 +46,37 @@ class DataUtilities(object):
 
         return input_arr
 
-    def isbinary(self, l1):
+    @staticmethod
+    def create_continuous_percentiles(input_arr=None, feature_names=None,
+                                      percentile_list=None, round_num=4):
+
+        if percentile_list is None:
+            percentile_list = [0, 1, 10, 25, 50, 75, 90, 100]
+
+        arr = np.nanpercentile(input_arr, q=percentile_list,
+                               axis=0, keepdims=False, interpolation='higher')
+        df = pd.DataFrame(arr, columns=feature_names)
+        df['percentile'] = ['{}%'.format(p) for p in percentile_list]
+        df = df.melt(id_vars='percentile').round(decimals=round_num)
+        z = df.groupby('variable').apply(lambda x: x.to_dict(orient='rows')).reset_index(name='perVar')
+        p_out = {'Type': 'percentileList',
+                 'Data': []}
+        z['perVar'].apply(lambda x: p_out['Data'].extend(x))
+        return (p_out, df)
+
+
+    @staticmethod
+    def isbinary(l1):
         """check if input list contains binary elements only"""
         return np.array_equal(l1, l1.astype(bool))
 
-    def _reduce_multi_index(self, *args):
+    @staticmethod
+    def _reduce_multi_index(*args):
         """reduce list of slice indices to common elements"""
         return reduce(np.intersect1d, args)
 
-    def _create_percentile_out(self, input_arr, feature_name,
+    @staticmethod
+    def _create_percentile_out(input_arr, feature_name,
                                percentiles=None):
 
         if percentiles is None:
@@ -83,25 +94,63 @@ class DataUtilities(object):
 
         return to_return
 
-class DataManager(DataUtilities):
+
+class DataManager(DataVisualizer, MetricMixin):
 
     __datatypes__ = (pd.DataFrame, pd.Series, np.ndarray)
 
     def __init__(self, X=None, y=None, groupby_df=None,
                  target_name=None, target_classes=None,
                  feature_names=None, groupby_names=None,
-                 model_type='regression'):
+                 model_type='regression', round_num=4):
+
+        """
+        Examples
+        ---------
+        >>> from mdesc.data.datamanager import DataManager
+        >>> from mdesc.utils.mdesc_utils import load_wine
+        >>> # featuredict - cat and continuous variables
+        >>> wine = load_wine
+        >>> groupby_df = wine.loc[:, ['Type', 'alcohol']]
+        >>> X = wine.loc[:, wine.columns != 'quality']
+        >>> y = wine.loc[:, 'quality'].values
+        >>> X = pd.get_dummies(X)
+        >>> DM = DataManager(X=X, y=y, groupby_df=groupby_df,
+        >>>                 target_name='quality', groupby_names=None)
+        >>> sub_groups = DM.create_sub_groups()
+        >>> # iterate over sub groups and extract out key info
+        >>> for group in sub_groups:
+        >>>     group_level = group[0]
+        >>>     group_col = group[1]
+        >>>     colname = group[2]
+        >>>     percentile_value = group[3]
+        >>>     percentile_indices = group[4]
+
+        :param X:
+        :param y:
+        :param groupby_df:
+        :param target_name:
+        :param target_classes:
+        :param feature_names:
+        :param groupby_names:
+        :param model_type:
+        :param round_num:
+        """
 
         self.model_type = model_type
         self.feature_names = self._format_labels(feature_names)
         self.target_classes = self._check_target_classes(target_name, y)
         self.target_name = self._format_labels(target_classes)
         self.groupby_names = self._format_labels(groupby_names)
-
         self._X = self._check_X(X)
         self._y = self._check_y(y, X)
         self._groupby_df = self._check_groupby_df(groupby_df, X)
-        self.percentile_list = []
+        self.round_num = round_num
+        self.continuous_indices = set()
+        self._results = pd.DataFrame()
+        self.accuracy = pd.DataFrame()
+
+        super(DataManager, self).__init__(round_num=round_num)
 
     def _format_labels(self, labels):
         if isinstance(labels, str) or labels is None:
@@ -167,6 +216,15 @@ class DataManager(DataUtilities):
         if self.feature_names[0] is None:
             self.feature_names = ['feature_{}'.format(idx) for idx, val in enumerate(list(range(X.shape[1])))]
 
+        self.feature_names = np.array(self.feature_names)
+
+        if self.feature_names.shape[0] != X.shape[1]:
+            err_msg = """feature_names not the same shape as columns in X
+                        feature_names: {}, X: {}""".format(self.feature_names.shape[0],
+                                                           X.shape[1])
+            raise (mdesc_exceptions.FeatureNamesShapeError(err_msg))
+
+
         if isinstance(X, pd.DataFrame):
             X = X.values
 
@@ -229,7 +287,12 @@ class DataManager(DataUtilities):
             for group_level in np.unique(group_arr):
                 print(group_level)
                 group_indices = np.where(group_arr == group_level)[0] # unpack tuple
-                yield (group_arr, group_level, group_col, group_indices)
+                output_dict = {}
+                output_dict['group_arr'] = group_arr
+                output_dict['group_level'] = group_level
+                output_dict['groupby_var'] = group_col
+                output_dict['group_indices'] = group_indices
+                yield output_dict
 
     def yield_continuous_percentile(self, full_input_arr=None,
                                      row_indices=None):
@@ -245,7 +308,7 @@ class DataManager(DataUtilities):
         full_input_arr = np.copy(full_input_arr)
         if row_indices is None:
             row_indices = np.nonzero(full_input_arr[:, 0])
-        full_input_arr[row_indices] = _revalue_numeric(full_input_arr[row_indices])
+        full_input_arr[row_indices] = DataUtilities._revalue_numeric(full_input_arr[row_indices])
 
         for percentile in np.unique(full_input_arr[row_indices]):
             percentile_indices = np.where(full_input_arr[row_indices].ravel()==percentile)[0]
@@ -253,7 +316,26 @@ class DataManager(DataUtilities):
             percentile_indices = row_indices[percentile_indices]
             yield (percentile_indices, percentile)
 
-    def create_sub_groups(self):
+    def create_group_accuracy(self, group_err_arr=None,
+                              **kwargs):
+
+        errors = kwargs.get('errors')
+        group_err_arr = errors[kwargs.get('group_indices')]
+        error_metric = self.metric_all(group_err_arr,
+                                       metric=kwargs.get('error_type'))
+
+        row = pd.DataFrame({'Yvar': self.target_name,
+                            'ErrType': kwargs.get('error_type'),
+                            'Type': 'Accuracy',
+                            'groupbyValue': kwargs.get('group_level'),
+                            kwargs.get('error_type'): error_metric,
+                           'Total': group_err_arr.shape[0],
+                           'groupByVarName': kwargs.get('groupby_var')}, index=[0])
+
+        self.accuracy = self.accuracy.append(row)
+
+
+    def create_sub_groups(self, **kwargs):
         """
         create slices of full data based on grouping levels and percentiles of continuous values
 
@@ -261,22 +343,44 @@ class DataManager(DataUtilities):
             percentile value, indices of rows corresponding to group level and percentile)
         """
         for group_container in self.return_group_array():
-            group_arr, group_level, group_col, group_indices = group_container
+            # group_arr, group_level, group_col, group_indices = group_container
+
+            # create group accuracy
+            if kwargs.get('errors', None) is not None:
+                group_container['errors'] = kwargs.get('errors')
+                group_container['error_type'] = kwargs.get('error_type')
+                self.create_group_accuracy(**group_container)
+                group_container.pop('errors')
 
             for idx, colname in enumerate(self.feature_names):
                 cur_arr = self._X[:, idx]
+                group_container['colname'] = colname
+                # create group level percentiles
 
-                if self.isbinary(self._X[:, idx]):
+                if DataUtilities.isbinary(self._X[:, idx]):
                     # TODO add future support for categorical variables
                     continue
+                group_container['dtype'] = 'Continuous'
 
-                percentile = self._create_percentile_out(cur_arr, colname)
-                self.percentile_list.append(percentile)
+                self.continuous_indices.add(idx)
+
                 percentile_generator = self.yield_continuous_percentile(full_input_arr=cur_arr,
-                                                                        row_indices=group_indices)
+                                                                        row_indices=group_container['group_indices'])
 
                 for percentile_indices, percentile_value in percentile_generator:
-                    yield (group_level, group_col, colname, percentile_value, percentile_indices)
+                    group_container['percentile_indices'] = percentile_indices
+                    group_container['percentile_value'] = percentile_value
+                    #yield (group_level, group_col, colname, percentile_value, percentile_indices)
+                    yield group_container
+
+        # create top level percentiles
+        p_input_fnames = self.feature_names[list(self.continuous_indices)]
+        p_input_arr = self.X[:, list(self.continuous_indices)]
+        self.cont_percentile_json, self.cont_percentile_df = DataUtilities.create_continuous_percentiles(input_arr=p_input_arr,
+                                                                                                         feature_names=p_input_fnames,
+                                                                                                         round_num=self.round_num)
+        # create within group level percentiles
+
 
     @property
     def groupby_df(self):
@@ -295,31 +399,12 @@ class DataManager(DataUtilities):
     def y(self):
         return self._y
 
+    @property
+    def results(self):
+        return self._results
 
-
-"""
-# featuredict - cat and continuous variables
-wine = pd.read_csv('debug/wine.csv')
-
-groupby_df = wine.loc[:, ['Type', 'alcohol']]
-
-X = wine.loc[:, wine.columns != 'quality']
-y = wine.loc[:, 'quality'].values
-
-X = pd.get_dummies(X)
-
-DM = DataManager(X=X, y=y, groupby_df=groupby_df,
-                 target_name='quality', groupby_names=None)
-
-sub_groups = DM.create_sub_groups()
-group_level, group_col, colname, percentile_value, percentile_indices = next(sub_groups)
-percentile_indices
-
-wine.iloc[percentile_indices]
-
-DM.y = wine.loc[:, 'Type'].values
-
-percentile_value
-wine.iloc[percentile_indices][['Type', 'volatile acidity']]
-"""
-
+    @results.setter
+    def results(self, value):
+        if not isinstance(value, pd.DataFrame):
+            raise ValueError("""results must be pd.DataFrame. Got type: {}""".format(type(value)))
+        self._results = value.round(decimals=self.round_num)

@@ -1,4 +1,4 @@
-
+import pandas as pd
 
 def prob_acc(true_class=0, pred_prob=0.2):
     """
@@ -10,3 +10,10 @@ def prob_acc(true_class=0, pred_prob=0.2):
     :rtype float
     """
     return (true_class * (1-pred_prob)) + ((1-true_class)*pred_prob)
+
+
+def load_wine():
+    """utility script to load wine dataset for examples"""
+
+    wine = pd.read_csv('debug/wine.csv')
+    return wine
