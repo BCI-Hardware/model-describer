@@ -80,12 +80,19 @@ class Eval(MetricMixin):
         return errors
 
     def _make_data(self, X, y, groupby_df, **kwargs):
+
+        if isinstance(self, Sensitivity):
+            self.class_type = 'sensitivity'
+        else:
+            self.class_type = 'error'
+
         self.data_set = DataManager(X=X, y=y, groupby_df=groupby_df,
                                     target_name=self.target_names,
                                     target_classes=self.target_classes,
                                     feature_names=self.feature_names,
                                     groupby_names=self.groupby_names,
                                     model_type=self.model_type,
+                                    class_type=self.class_type
                                     )
 
         kwargs['error_type'] = self.error_type
@@ -97,6 +104,51 @@ class Eval(MetricMixin):
         """create returnable results and reset container"""
         self.data_set.results = pd.concat(self.data_container)
         self.data_container = []
+
+    def construct_group_aggregates(self, group_data, errors=None,
+                                   **kwargs):
+        """
+        summarize group level slice of data
+
+        :param group_data: np.array - required
+            slice of original data within specific group
+        :param groupby_var: str - required
+            string name of groupby level
+        :param group_level: str - required
+            specific level within groupby_var
+        :param errors: np.array - required
+            list or np.array of error metric
+        :param x_value: float - required
+            value of continuous variables (specific percentile)
+        :param x_name: str - required
+            feature name of X
+        :param y_slice: np.array - required
+            predicted y values for slice of data
+        :param std_change: float - optional
+            user defined standard deviation change in X
+        """
+        # replace nan's with 0 in pos/neg errors
+        if self.class_type == 'sensitivity':
+            y_slice = np.nanmedian(errors)
+        else:
+            y_slice = np.nanmedian(kwargs['y_slice'])
+
+        positive_errors = np.nan_to_num(np.nanmedian(errors[errors >= 0]), 0)
+        negative_errors = np.nan_to_num(np.nanmedian(errors[errors <= 0]), 0)
+
+        errdf = pd.DataFrame({'groupByValue': kwargs['group_level'],
+                              'groupByVarName': kwargs['groupby_var'],
+                              self.error_type: self.metric_all(errors, metric=self.error_type),
+                              'Total': float(group_data.shape[0]),
+                              'x_name': kwargs['colname'],
+                              'x_value': kwargs['percentile_value'],
+                              'errPos': positive_errors,
+                              'errNeg': negative_errors,
+                              'predictedYSmooth': y_slice,
+                              'dtype': kwargs['dtype'],
+                              'std_change': kwargs.get('std_change', None)}, index=[0])
+
+        self.data_container.append(errdf)
 
     def fit(self, X, y, groupby_df=None,
             errors=None):
@@ -150,47 +202,6 @@ class Eval(MetricMixin):
                  **kwargs)
 
         return self.data_set.results
-
-    def construct_group_aggregates(self, group_data, errors=None,
-                                   **kwargs):
-        """
-        summarize group level slice of data
-
-        :param group_data: np.array - required
-            slice of original data within specific group
-        :param groupby_var: str - required
-            string name of groupby level
-        :param group_level: str - required
-            specific level within groupby_var
-        :param errors: np.array - required
-            list or np.array of error metric
-        :param x_value: float - required
-            value of continuous variables (specific percentile)
-        :param x_name: str - required
-            feature name of X
-        :param y_slice: np.array - required
-            predicted y values for slice of data
-        :param std_change: float - optional
-            user defined standard deviation change in X
-        """
-        # replace nan's with 0 in pos/neg errors
-
-        positive_errors = np.nan_to_num(np.nanmedian(errors[errors >= 0]), 0)
-        negative_errors = np.nan_to_num(np.nanmedian(errors[errors <= 0]), 0)
-
-        errdf = pd.DataFrame({'groupByValue': kwargs['group_level'],
-                              'groupByVarName': kwargs['groupby_var'],
-                              self.error_type: self.metric_all(errors, metric=self.error_type),
-                              'Total': float(group_data.shape[0]),
-                              'x_name': kwargs['colname'],
-                              'x_value': kwargs['percentile_value'],
-                              'errPos': positive_errors,
-                              'errNeg': negative_errors,
-                              'predictedYSmooth': np.nanmean(kwargs['y_slice']),
-                              'dtype': kwargs['dtype'],
-                              'std_change': kwargs.get('std_change', None)}, index=[0])
-
-        self.data_container.append(errdf)
 
 
 class Sensitivity(Eval):

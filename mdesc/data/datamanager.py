@@ -135,7 +135,8 @@ class DataManager(DataVisualizer, MetricMixin):
     def __init__(self, X=None, y=None, groupby_df=None,
                  target_name=None, target_classes=None,
                  feature_names=None, groupby_names=None,
-                 model_type='regression', round_num=4):
+                 model_type='regression', round_num=4,
+                 class_type='sensitivity'):
 
         """
         Examples
@@ -168,6 +169,7 @@ class DataManager(DataVisualizer, MetricMixin):
         :param groupby_names:
         :param model_type:
         :param round_num:
+        :param class_type:
         """
 
         self.model_type = model_type
@@ -179,6 +181,7 @@ class DataManager(DataVisualizer, MetricMixin):
         self._y = self._check_y(y, X)
         self._groupby_df = self._check_groupby_df(groupby_df, X)
         self.round_num = round_num
+        self.class_type = class_type
         self.continuous_indices = set()
         self._results = pd.DataFrame()
         self.accuracy = pd.DataFrame()

@@ -34,15 +34,27 @@ class DataVisualizer(object):
 
         :return:
         """
+
+        if self.class_type == 'error':
+            to_drop = ['x_name', 'MSE', 'Total', 'dtype', 'std_change']
+            groupby = 'x_name'
+        else:
+            to_drop = ['x_name', 'MSE', 'Total', 'dtype', 'std_change', 'errPos', 'errNeg']
+            groupby = ['x_name', 'std_change']
+
         t = (self._results.fillna('null')
-             .round(decimals=2)
-             .groupby('x_name')
+             .round(decimals=4)
+             .groupby(groupby)
              .apply(lambda x: (x.rename(columns={'x_value': x['x_name'].unique()[0]})
-                               .drop(['x_name', 'MSE', 'Total', 'dtype', 'std_change'], axis=1)
+                               .drop(to_drop, axis=1)
                                .to_dict(orient='rows')))
              .reset_index(name='json_values'))
 
-        t_list = [{'Data': l} for l in t['json_values'].tolist()]
+        if self.class_type == 'error':
+            t_list = [{'Data': l} for l in t['json_values'].tolist()]
+        else:
+            t_list = [{'Data': l, 'Change': change} for l, change in
+                      zip(t['json_values'].tolist(), t['std_change'].tolist())]
         tmp = []
         # construct as Continuous
         for d in t_list:
