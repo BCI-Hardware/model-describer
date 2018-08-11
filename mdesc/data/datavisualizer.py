@@ -34,11 +34,11 @@ class DataVisualizer(object):
 
         :return:
         """
-        t = (self._results.fillna('None')
+        t = (self._results.fillna('null')
              .round(decimals=2)
              .groupby('x_name')
              .apply(lambda x: (x.rename(columns={'x_value': x['x_name'].unique()[0]})
-                               .drop(['x_name', 'MSE', 'Total', 'dtype'], axis=1)
+                               .drop(['x_name', 'MSE', 'Total', 'dtype', 'std_change'], axis=1)
                                .to_dict(orient='rows')))
              .reset_index(name='json_values'))
 
@@ -65,11 +65,12 @@ class DataVisualizer(object):
         -----------
         {'Yvar': 'quality', 'ErrType': 'MSE', 'Type': 'Accuracy',
         'Data': [{'groupbyValue': 'high', 'MSE': 0.09575842696629212, 'Total': 356L...}
-        
+
         :return:
         """
         # MAIN ACCURACY
-        acc = (self.accuracy.groupby(['Yvar', 'ErrType', 'Type'])
+        acc = self.accuracy.fillna('null')
+        acc = (acc.groupby(['Yvar', 'ErrType', 'Type'])
                .apply(lambda x: x.drop(['Yvar', 'ErrType', 'Type'], axis=1)
                       .to_dict(orient='rows'))
                .reset_index(name='accContainer'))
@@ -82,6 +83,47 @@ class DataVisualizer(object):
 
         return out
 
+    def p_group_to_json(self, p_group_df):
+        """
+
+        :param p_group_df: pd.DataFrame - required
+            percentiles within variables at specific group levels
+        :return:
+
+        Input Example
+        -----------
+        value percentile groupByVar           colname
+        0.115         0%       high  volatile acidity
+        0.160         1%       high  volatile acidity
+        0.220        10%       high  volatile acidity
+
+        Output Example:
+        -----------
+        {'Data': [{'variable': 'chlorides', 'percentileList': [{'percentileValues': [{'percentiles': '0%',
+        'value': 0.009}, {'percentiles': '1%', 'value': 0.021}, {'percentiles': '10%', 'value': 0.031},
+        {'percentiles': '25%', 'value': 0.038}, {'percentiles': '50%', 'value': 0.047},
+        {'percentiles': '75%', 'value': 0.065}, {'percentiles': '90%', 'value': 0.086},
+        {'percentiles': '100%', 'value': 0.611}], 'groupByVar': 1L}, {'percentileValues':
+        [{'percentiles': '0%', 'value': 0.012}, {'percentiles': '1%', 'value': 0.043}, {'percentiles': '10%',
+        'value': 0.06}, {'percentiles': '25%', 'value': 0.07}, {'percentiles': '50%', 'value': 0.079},
+        {'percentiles': '75%', 'value': 0.09}, {'percentiles': '90%', 'value': 0.109}, ...
+        """
+        # base layer nesting
+        p_group_df = p_group_df.fillna('null')
+        tmp = (p_group_df.groupby(['colname', 'groupByVar'])
+               .apply(lambda x: x.drop(['groupByVar', 'colname'], axis=1).to_dict(orient='rows'))
+               .reset_index(name='percentileValues')
+               )
+        # second level nesting
+        tmp2 = (tmp.groupby('colname')
+                .apply(lambda x: x.drop('colname', axis=1).to_dict(orient='rows'))
+                .reset_index(name='percentileList')
+                .rename(columns={'colname': 'variable'})
+                )
+        tmp_json = tmp2.to_dict(orient='rows')
+        final_dict = {'Type': 'PercentileGroup', 'Data': tmp_json}
+        return final_dict
+
     def to_html(self, fpath=None):
         """save json results to html for dashboard"""
 
@@ -91,16 +133,20 @@ class DataVisualizer(object):
         # format aggregate analysis results
         agg = self.main_to_json()
         acc = self.acc_to_json()
+        p_group_json = self.p_group_to_json(self.p_group_df)
         # append percentile list
-        agg.extend(self.percentile_list)
+        agg.append(self.cont_percentile_json)
+        agg.append(p_group_json)
         agg.append(acc)
+
         datastring = str(agg)
         datastring = DataVisualizer.strip_L.sub('\g<digit>', datastring)
 
-        # load correct HTML format
-        html_path = pkg_resources.resource_filename('mdesc', '{}.txt'.format('html_error'))
+        #html_path = pkg_resources.resource_filename('mdesc', '{}.txt'.format('html_error'))
+        html_path = r'mdesc/data/html/html_error.txt'
         html = open(html_path, 'r').read()
         output = html.replace('<***>', datastring)
+        output = output.replace("'", '"')
 
         with open(fpath, 'w') as outfile:
             outfile.write(output)

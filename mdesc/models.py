@@ -115,7 +115,7 @@ class Eval(MetricMixin):
         """
 
         if errors is None:
-            errors = self._create_errors(self.data_set.X, self.data_set.y)
+            errors = self._create_errors(X, y)
 
         groups = self._make_data(X, y, groupby_df, errors=errors)
 
@@ -170,10 +170,13 @@ class Eval(MetricMixin):
             feature name of X
         :param y_slice: np.array - required
             predicted y values for slice of data
+        :param std_change: float - optional
+            user defined standard deviation change in X
         """
+        # replace nan's with 0 in pos/neg errors
 
-        positive_errors = np.nanmedian(errors[errors >= 0])
-        negative_errors = np.nanmedian(errors[errors <= 0])
+        positive_errors = np.nan_to_num(np.nanmedian(errors[errors >= 0]), 0)
+        negative_errors = np.nan_to_num(np.nanmedian(errors[errors <= 0]), 0)
 
         errdf = pd.DataFrame({'groupByValue': kwargs['group_level'],
                               'groupByVarName': kwargs['groupby_var'],
@@ -184,7 +187,8 @@ class Eval(MetricMixin):
                               'errPos': positive_errors,
                               'errNeg': negative_errors,
                               'predictedYSmooth': np.nanmean(kwargs['y_slice']),
-                              'dtype': kwargs['dtype']}, index=[0])
+                              'dtype': kwargs['dtype'],
+                              'std_change': kwargs.get('std_change', None)}, index=[0])
 
         self.data_container.append(errdf)
 
@@ -247,15 +251,18 @@ class Sensitivity(Eval):
             original_preds = self.prediction_fn(self.data_set.X)
 
         error_dict = {}
+        change_dict = {}
         for idx, fname in enumerate(self.data_set.feature_names):
             if not DataUtilities.isbinary(self.data_set.X[:, idx]):
                 X_copy = np.copy(self.data_set.X)
-                X_copy[:, idx] = X_copy[:, idx] + (np.std(self.data_set.X[:, idx]) * self.std)
+                change = np.std(self.data_set.X[:, idx])
+                X_copy[:, idx] = X_copy[:, idx] + (change * self.std)
                 errors = self._create_errors(X_copy, self.data_set.y,
                                              original_preds=original_preds)
                 error_dict[idx] = errors
+                change_dict[idx] = change
 
-        return error_dict
+        return error_dict, change_dict
 
     def fit(self, X, y, groupby_df=None,
             **kwargs):
@@ -277,12 +284,13 @@ class Sensitivity(Eval):
         """
         original_errors = self._create_errors(X, y)
         groups = self._make_data(X, y, groupby_df, errors=original_errors)
-        error_dict = self._make_error_dict()
+        error_dict, change_dict = self._make_error_dict()
 
         for group in groups:
             y_slice = self.data_set.y[group['percentile_indices']]
             group['y_slice'] = y_slice
             col_idx = np.where(self.data_set.feature_names == group['colname'])[0][0]
+            group['std_change'] = change_dict[col_idx]
             # col_idx = self.data_set.feature_names.index(col_name)
 
             self.construct_group_aggregates(self.data_set.X[group['percentile_indices']],

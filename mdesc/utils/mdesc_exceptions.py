@@ -1,5 +1,8 @@
-from exceptions import Exception
-
+try:
+    from exceptions import Exception
+except ImportError:
+    import builtins
+    Exception = builtins.BaseException
 
 def exception_factory(exception_name, base_exception=Exception, attributes=None):
     attribute_dict = {

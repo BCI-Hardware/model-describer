@@ -47,23 +47,56 @@ class DataUtilities(object):
         return input_arr
 
     @staticmethod
-    def create_continuous_percentiles(input_arr=None, feature_names=None,
-                                      percentile_list=None, round_num=4):
-
+    def create_percentiles(input_arr, percentile_list=None):
         if percentile_list is None:
             percentile_list = [0, 1, 10, 25, 50, 75, 90, 100]
 
-        arr = np.nanpercentile(input_arr, q=percentile_list,
-                               axis=0, keepdims=False, interpolation='higher')
+        p_arr = np.nanpercentile(input_arr, q=percentile_list,
+                                 axis=0, keepdims=False, interpolation='higher')
+
+        str_p_list = ['{}%'.format(p) for p in percentile_list]
+        return p_arr, percentile_list, str_p_list
+
+    @staticmethod
+    def create_continuous_percentiles(input_arr=None, feature_names=None,
+                                      round_num=4):
+
+        arr, percentile_list, str_p_list = DataUtilities.create_percentiles(input_arr)
         df = pd.DataFrame(arr, columns=feature_names)
-        df['percentile'] = ['{}%'.format(p) for p in percentile_list]
-        df = df.melt(id_vars='percentile').round(decimals=round_num)
+        df['percentiles'] = str_p_list
+        df = df.melt(id_vars='percentiles').round(decimals=round_num)
         z = df.groupby('variable').apply(lambda x: x.to_dict(orient='rows')).reset_index(name='perVar')
-        p_out = {'Type': 'percentileList',
+        p_out = {'Type': 'Percentile',
                  'Data': []}
         z['perVar'].apply(lambda x: p_out['Data'].extend(x))
         return (p_out, df)
 
+    @staticmethod
+    def create_continuous_groupby_percentiles(cur_arr, **kwargs):
+        """
+
+        :param cur_arr:
+        :param kwargs:
+        :return:
+
+        Output Example
+        -----------
+        value percentile groupByVar           colname
+        0.115         0%       high  volatile acidity
+        0.160         1%       high  volatile acidity
+        0.220        10%       high  volatile acidity
+        """
+        group_indices = kwargs.get('group_indices')
+        group_level = kwargs.get('group_level')
+        colname = kwargs.get('colname')
+        cur_group_arr = cur_arr[group_indices]
+        p_arr, percentile_list, str_p_list = DataUtilities.create_percentiles(cur_group_arr)
+        df = pd.DataFrame(p_arr, columns=['value'])
+        df['percentiles'] = str_p_list
+        df['groupByVar'] = group_level
+        df['colname'] = colname
+        df = df.round(decimals=kwargs.get('round_num', 4))
+        return df
 
     @staticmethod
     def isbinary(l1):
@@ -149,6 +182,7 @@ class DataManager(DataVisualizer, MetricMixin):
         self.continuous_indices = set()
         self._results = pd.DataFrame()
         self.accuracy = pd.DataFrame()
+        self.p_group_df = pd.DataFrame()
 
         super(DataManager, self).__init__(round_num=round_num)
 
@@ -189,7 +223,6 @@ class DataManager(DataVisualizer, MetricMixin):
             groupby_df = groupby_df.values
 
         if self.groupby_names[0] is None:
-            print(groupby_df.shape)
             self.groupby_names = ['group_{}'.format(idx) for idx, _ in enumerate(list(range(groupby_df.shape[1])))]
 
         if self.groupby_names[0] is not None:
@@ -327,13 +360,12 @@ class DataManager(DataVisualizer, MetricMixin):
         row = pd.DataFrame({'Yvar': self.target_name,
                             'ErrType': kwargs.get('error_type'),
                             'Type': 'Accuracy',
-                            'groupbyValue': kwargs.get('group_level'),
+                            'groupByValue': kwargs.get('group_level'),
                             kwargs.get('error_type'): error_metric,
                            'Total': group_err_arr.shape[0],
                            'groupByVarName': kwargs.get('groupby_var')}, index=[0])
 
         self.accuracy = self.accuracy.append(row)
-
 
     def create_sub_groups(self, **kwargs):
         """
@@ -349,6 +381,7 @@ class DataManager(DataVisualizer, MetricMixin):
             if kwargs.get('errors', None) is not None:
                 group_container['errors'] = kwargs.get('errors')
                 group_container['error_type'] = kwargs.get('error_type')
+                group_container['round_num'] = self.round_num
                 self.create_group_accuracy(**group_container)
                 group_container.pop('errors')
 
@@ -357,10 +390,14 @@ class DataManager(DataVisualizer, MetricMixin):
                 group_container['colname'] = colname
                 # create group level percentiles
 
-                if DataUtilities.isbinary(self._X[:, idx]):
+                if DataUtilities.isbinary(cur_arr):
                     # TODO add future support for categorical variables
                     continue
                 group_container['dtype'] = 'Continuous'
+                # construct percentile values within column within groupby level
+                percentile_groupby = DataUtilities.create_continuous_groupby_percentiles(cur_arr,
+                                                                                         **group_container)
+                self.p_group_df = self.p_group_df.append(percentile_groupby)
 
                 self.continuous_indices.add(idx)
 
@@ -379,8 +416,6 @@ class DataManager(DataVisualizer, MetricMixin):
         self.cont_percentile_json, self.cont_percentile_df = DataUtilities.create_continuous_percentiles(input_arr=p_input_arr,
                                                                                                          feature_names=p_input_fnames,
                                                                                                          round_num=self.round_num)
-        # create within group level percentiles
-
 
     @property
     def groupby_df(self):
