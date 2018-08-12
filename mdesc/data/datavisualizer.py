@@ -1,5 +1,11 @@
 import pkg_resources
 import re
+import random
+
+import numpy as np
+
+from plotly.offline import download_plotlyjs, init_notebook_mode, plot, iplot
+import plotly.graph_objs as go
 
 
 class DataVisualizer(object):
@@ -165,3 +171,223 @@ class DataVisualizer(object):
 
     def to_viz(self):
         pass
+
+
+class NotebookVisualizer(DataVisualizer):
+    rgb = lambda: random.randint(0, 255)
+
+    def __init__(self, rgb=None):
+        if rgb is None:
+            self.r, self.g, self.b = [NotebookViz.rgb() for i in range(3)]
+        else:
+            self.r, self.g, self.b = rgb
+
+        self.traces = []
+        self.all_indices = []
+        self.all_x_names = []
+        self.col_lookup = {}
+        self.layout_lookup = {}
+        self.range_lookup = {}
+        self.title_lookup = {}
+
+    def _create_base_trace(self, level, x, y, rgb=None):
+
+        if rgb is None:
+            r, g, b = self.r, self.g, self.b
+        else:
+            r, g, b = rgb
+
+        trace1 = go.Scatter(
+            x=x,
+            y=y,
+            line=dict(color='rgb({},{},{})'.format(r, g, b)),
+            mode='lines',
+            name=level,
+        )
+
+        return trace1
+
+    def _create_error_trace(self, level, x, x_rev, y, y_upper, y_lower,
+                            rgb=None):
+        # pick colors
+        if rgb is None:
+            r, g, b = self.r, self.g, self.b
+        else:
+            r, g, b = rgb
+        trace1 = go.Scatter(
+            x=x + x_rev,
+            y=y_upper + y_lower,
+            fill='tozerox',
+            fillcolor='rgba({},{},{},0.2)'.format(r, g, b),
+            line=dict(color='rgba(255,255,255,0)'),
+            showlegend=False,
+            name=level,
+        )
+
+        trace2 = self._create_base_trace(level, x, y, rgb=rgb)
+
+        return (trace1, trace2)
+
+    def _base_layer(self, df=None):
+
+        for x_idx, x_name in enumerate(df['x_name'].unique()):
+            x_group_slice = df.loc[(df['groupByVarName'] == self.groupby_name) & (df['x_name'] == x_name)]
+            master_x = x_group_slice['x_value'].values
+            self.all_x_names.append(x_name)
+            self.col_lookup[x_name] = []
+            self.range_lookup[x_name] = [np.min(master_x), np.max(master_x)]
+            self.title_lookup[x_name] = '{} for {} {} chart'.format(x_name, self.groupby_name, self.class_type)
+            yield (x_name, x_group_slice)
+
+    def _create_nested_error_traces(self, df=None,
+                                    groupby_name=None):
+        """
+        Create plotly traces for each feature and level within specified groupby_var
+
+        """
+        for x_name, x_group_slice in self._base_layer(df=df):
+
+            for l_idx, level in enumerate(self.levels):
+                mask = x_group_slice['groupByValue'] == level
+                y = x_group_slice.loc[mask, 'predictedYSmooth'].values
+                y_lower = (y + x_group_slice.loc[mask, 'errNeg'].values).tolist()
+                y_lower = y_lower[::-1]
+                y_upper = (y + x_group_slice.loc[mask, 'errPos'].values).tolist()
+                x = x_group_slice.loc[mask, 'x_value'].tolist()
+                x_rev = x[::-1]
+
+                trace1, trace2 = self._create_error_trace(level, x, x_rev, y, y_upper, y_lower,
+                                                          rgb=self.rgb_anchor[l_idx])
+                trace_tracker_1 = len(self.traces)
+                trace_tracker_2 = trace_tracker_1 + 1
+                self.traces.append(trace1)
+                self.all_indices.append(trace_tracker_1)
+                self.traces.append(trace2)
+                self.all_indices.append(trace_tracker_2)
+                self.col_lookup[x_name].append(trace_tracker_1)
+                self.col_lookup[x_name].append(trace_tracker_2)
+
+    def _create_nested_sensitivity_traces(self, df=None):
+
+        for x_name, x_group_slice in self._base_layer(df=df):
+
+            for l_idx, level in enumerate(self.levels):
+                mask = x_group_slice['groupByValue'] == level
+                y = x_group_slice.loc[mask, 'predictedYSmooth'].values
+                x = x_group_slice.loc[mask, 'x_value'].tolist()
+
+                trace1 = self._create_base_trace(level, x, y, rgb=self.rgb_anchor[l_idx])
+                trace_tracker_1 = len(self.traces)
+                self.traces.append(trace1)
+                self.all_indices.append(trace_tracker_1)
+                self.col_lookup[x_name].append(trace_tracker_1)
+
+    def _create_update_menu(self, buttons):
+
+        updatemenus = list([
+            dict(active=-1,
+                 buttons=buttons,
+                 direction='down',
+                 pad={'r': 10, 't': 10},
+                 showactive=True,
+                 xanchor='left',
+                 yanchor='top',
+                 y=1.12,
+                 x=1,
+                 )
+        ])
+
+        return updatemenus
+
+    def _create_buttons(self):
+
+        buttons = []
+
+        for x_name in self.all_x_names:
+            format_dict = {}
+            format_dict['label'] = x_name
+            format_dict['method'] = 'update'
+            format_dict['args'] = [
+                {'visible': np.isin(self.all_indices, self.col_lookup[x_name])},
+                {'title': '{} VIZ {}; Groupby: {}'.format(self.class_type, x_name, self.groupby_name),
+                 'xaxis': dict(
+                     gridcolor='rgb(255,255,255)',
+                     range=self.range_lookup[x_name],
+                     showgrid=True,
+                     showline=False,
+                     showticklabels=True,
+                     tickcolor='rgb(127,127,127)',
+                     ticks='outside',
+                     zeroline=False,
+                     title=x_name
+                 )}
+            ]
+            buttons.append(format_dict)
+
+        return buttons
+
+    def _create_layout(self, updatemenus):
+        layout = go.Layout(
+            title='{} Visualization Chart'.format(self.class_type),
+            paper_bgcolor='rgb(255,255,255)',
+            plot_bgcolor='rgb(229,229,229)',
+            xaxis=dict(
+                gridcolor='rgb(255,255,255)',
+                # range=[np.min(x), np.max(x)],
+                showgrid=True,
+                showline=False,
+                showticklabels=True,
+                tickcolor='rgb(127,127,127)',
+                ticks='outside',
+                zeroline=False,
+                title='x axis'
+            ),
+            yaxis=dict(
+                gridcolor='rgb(255,255,255)',
+                showgrid=True,
+                showline=False,
+                showticklabels=True,
+                tickcolor='rgb(127,127,127)',
+                ticks='outside',
+                zeroline=False,
+                title=self.target_name
+            ),
+            updatemenus=updatemenus,
+        )
+
+        return layout
+
+    def viz_now(self, input_df=None, groupby_name=None,
+                chart_type='sensitivity'):
+
+        if groupby_name is None:
+            raise ValueError("""Must select viable groupby variable. Available groupby variables
+            inclue: {}""".format(None))  # TODO add self.groupby_df names
+
+        self.groupby_name = groupby_name
+        self.class_type = chart_type
+        self.target_name = 'quality'
+
+        # iterate over levels within groupby_name
+        self.levels = input_df.loc[input_df['groupByVarName'] == self.groupby_name, 'groupByValue'].unique()
+        rgb = NotebookVisualizer.rgb
+        self.rgb_anchor = [(rgb(), rgb(), rgb()) for level in self.levels]
+
+        if self.class_type == 'sensitivity':
+
+            self._create_nested_sensitivity_traces(df=input_df)
+        else:
+            self._create_nested_error_traces(df=input_df)
+
+        buttons = self._create_buttons()
+
+        updatemenus = self._create_update_menu(buttons)
+
+        layout = self._create_layout(updatemenus)
+
+        # layout['updatemenus'] = updatemenus
+
+        data = self.traces
+        fig = go.Figure(data=data, layout=layout)
+        return iplot(fig)
+

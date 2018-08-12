@@ -129,9 +129,9 @@ class Eval(MetricMixin):
         """
         # replace nan's with 0 in pos/neg errors
         if self.class_type == 'sensitivity':
-            y_slice = np.nanmedian(errors)
+            y_slice = np.nanmean(errors)
         else:
-            y_slice = np.nanmedian(kwargs['y_slice'])
+            y_slice = np.nanmean(kwargs['y_slice'])
 
         positive_errors = np.nan_to_num(np.nanmedian(errors[errors >= 0]), 0)
         negative_errors = np.nan_to_num(np.nanmedian(errors[errors <= 0]), 0)
