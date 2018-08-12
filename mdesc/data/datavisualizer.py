@@ -176,9 +176,9 @@ class DataVisualizer(object):
 class NotebookVisualizer(DataVisualizer):
     rgb = lambda: random.randint(0, 255)
 
-    def __init__(self, rgb=None):
+    def __init__(self, rgb=None, round_num=4):
         if rgb is None:
-            self.r, self.g, self.b = [NotebookViz.rgb() for i in range(3)]
+            self.r, self.g, self.b = [NotebookVisualizer.rgb() for i in range(3)]
         else:
             self.r, self.g, self.b = rgb
 
@@ -189,6 +189,7 @@ class NotebookVisualizer(DataVisualizer):
         self.layout_lookup = {}
         self.range_lookup = {}
         self.title_lookup = {}
+        super(NotebookVisualizer, self).__init__(round_num=round_num)
 
     def _create_base_trace(self, level, x, y, rgb=None):
 
@@ -327,6 +328,10 @@ class NotebookVisualizer(DataVisualizer):
         return buttons
 
     def _create_layout(self, updatemenus):
+        if self.class_type == 'sensitivity':
+            title = 'Predicted impact on {}'.format(self.target_name)
+        else:
+            title = 'Predicted {}'.format(self.target_name)
         layout = go.Layout(
             title='{} Visualization Chart'.format(self.class_type),
             paper_bgcolor='rgb(255,255,255)',
@@ -350,34 +355,32 @@ class NotebookVisualizer(DataVisualizer):
                 tickcolor='rgb(127,127,127)',
                 ticks='outside',
                 zeroline=False,
-                title=self.target_name
+                title=title
             ),
             updatemenus=updatemenus,
         )
 
         return layout
 
-    def viz_now(self, input_df=None, groupby_name=None,
-                chart_type='sensitivity'):
+    def viz_now(self, groupby_name=None, rgb=None):
 
         if groupby_name is None:
             raise ValueError("""Must select viable groupby variable. Available groupby variables
             inclue: {}""".format(None))  # TODO add self.groupby_df names
 
         self.groupby_name = groupby_name
-        self.class_type = chart_type
         self.target_name = 'quality'
 
         # iterate over levels within groupby_name
-        self.levels = input_df.loc[input_df['groupByVarName'] == self.groupby_name, 'groupByValue'].unique()
+        self.levels = self._results.loc[self._results['groupByVarName'] == self.groupby_name, 'groupByValue'].unique()
         rgb = NotebookVisualizer.rgb
         self.rgb_anchor = [(rgb(), rgb(), rgb()) for level in self.levels]
 
         if self.class_type == 'sensitivity':
 
-            self._create_nested_sensitivity_traces(df=input_df)
+            self._create_nested_sensitivity_traces(df=self._results)
         else:
-            self._create_nested_error_traces(df=input_df)
+            self._create_nested_error_traces(df=self._results)
 
         buttons = self._create_buttons()
 

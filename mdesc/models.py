@@ -14,8 +14,9 @@ from mdesc.utils.mdesc_utils import prob_acc
 class Eval(MetricMixin):
 
     def __init__(self, round_num=2, prediction_fn=None,
-                 error_type='MSE', model_type='regression', target_names=None,
-                 groupby_names=None, feature_names=None, target_classes=None):
+                 error_type='MSE', target_names=None,
+                 groupby_names=None, feature_names=None,
+                 model_type='regression'):
 
         """
 
@@ -35,7 +36,10 @@ class Eval(MetricMixin):
         self.target_names = target_names
         self.groupby_names = groupby_names
         self.feature_names = feature_names
-        self.target_classes = target_classes
+        self.class_type = 'eval'
+
+    def _create_preds(self, X):
+        return self.prediction_fn(X)
 
     def _create_errors(self, X, y,
                        original_preds=None):
@@ -58,42 +62,25 @@ class Eval(MetricMixin):
         :return: np.array
             array of error measures
         """
-
-        def unpack_preds():
-            pred_proba_y = self.prediction_fn(X)
-            actual_y = [self.data_set.target_classes[x] for x in y]
-            prob_diff = [prob_acc(true_class=actual_value, pred_prob=pred_value[1]) for actual_value, pred_value in
-                         zip(actual_y, pred_proba_y)]
-            return np.array(prob_diff)
-
-        if self.model_type == 'regression':
-            y_pred = self.prediction_fn(X)
-            if original_preds is not None:
-                errors = original_preds - y_pred
-            else:
-                errors = y - y_pred
+        y_pred = self._create_preds(X)
+        if original_preds is not None:
+            errors = original_preds - y_pred
         else:
-            errors = unpack_preds()
-            if original_preds is not None:
-                errors = original_preds - errors
+            errors = y - y_pred
 
         return errors
 
-    def _make_data(self, X, y, groupby_df, **kwargs):
-
-        if isinstance(self, Sensitivity):
-            self.class_type = 'sensitivity'
-        else:
-            self.class_type = 'error'
+    def _set_data(self, X, y, groupby_df):
 
         self.data_set = DataManager(X=X, y=y, groupby_df=groupby_df,
                                     target_name=self.target_names,
-                                    target_classes=self.target_classes,
                                     feature_names=self.feature_names,
                                     groupby_names=self.groupby_names,
                                     model_type=self.model_type,
                                     class_type=self.class_type
                                     )
+
+    def _make_data(self, **kwargs):
 
         kwargs['error_type'] = self.error_type
 
@@ -133,8 +120,8 @@ class Eval(MetricMixin):
         else:
             y_slice = np.nanmean(kwargs['y_slice'])
 
-        positive_errors = np.nan_to_num(np.nanmedian(errors[errors >= 0]), 0)
-        negative_errors = np.nan_to_num(np.nanmedian(errors[errors <= 0]), 0)
+        positive_errors = np.nan_to_num(np.nanmean(errors[errors >= 0]), 0)
+        negative_errors = np.nan_to_num(np.nanmean(errors[errors <= 0]), 0)
 
         errdf = pd.DataFrame({'groupByValue': kwargs['group_level'],
                               'groupByVarName': kwargs['groupby_var'],
@@ -165,14 +152,16 @@ class Eval(MetricMixin):
         :param errors: np.array - optional
             modified error values to use for calculation
         """
+        self._set_data(X, y, groupby_df)
 
         if errors is None:
             errors = self._create_errors(X, y)
 
-        groups = self._make_data(X, y, groupby_df, errors=errors)
+        groups = self._make_data(errors=errors)
+        y_pred = self._create_preds(self.data_set.X)
 
         for group in groups:
-            group['y_slice'] = self.data_set.y[group['percentile_indices']]
+            group['y_slice'] = y_pred[group['percentile_indices']]
             self.construct_group_aggregates(self.data_set.X[group['percentile_indices']],
                                             errors=errors[group['percentile_indices']],
                                             **group)
@@ -204,76 +193,61 @@ class Eval(MetricMixin):
         return self.data_set.results
 
 
-class Sensitivity(Eval):
+class ClassifierEval(Eval):
 
-    def __init__(self, std=1, **kwargs):
+    def __init__(self, round_num=4, prediction_fn=None,
+                 error_type='MEAN', target_names=None,
+                 groupby_names=None, feature_names=None,
+                 target_classes=None):
+
+        self.target_classes = target_classes
+        super(ClassifierEval, self).__init__(round_num=round_num, prediction_fn=prediction_fn,
+                                             error_type=error_type, target_names=target_names,
+                                             groupby_names=groupby_names, feature_names=feature_names,
+                                             model_type='classification')
+
+    def _create_preds(self, X):
+        y_pred = self.prediction_fn(X)
+        y_pred = y_pred[:, 1]
+        return y_pred
+
+    def _create_errors(self, X, y,
+                       original_preds=None):
+        """
+        construct error metrics based on difference between y_hat and y_true
+
+        For regression tasks, simply measure the difference between y_hat and y_true.
+        For classification tasks, get the predicted probability of falling in class 1.
+        Using the predicted probability, get the prediction accuracy against the true class.
+
+        If original_preds specified, measure the difference between new predictions and
+        original_predictions to develop sensitivity measures.
+
+        :param X: np.array - required
+            Input X array
+        :param y: np.array - required
+            Input y array
+        :param original_preds: np.array - optional
+            original prediction array
+        :return: np.array
+            array of error measures
         """
 
+        def unpack_preds():
+            pred_proba_y = self._create_preds(X)
+            actual_y = [self.data_set.target_classes[x] for x in y]
+            prob_diff = [prob_acc(true_class=actual_value, pred_prob=pred_value) for actual_value, pred_value in
+                         zip(actual_y, pred_proba_y)]
+            return np.array(prob_diff)
 
-        :param std: int|float - optional
-            standard deviation number to construct synthetic data
-        :param kwargs:
 
-        Examples
-        ---------
-        >>> import pandas as pd
-        >>> from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-        >>> from mdesc.models import Sensitivity
+        errors = unpack_preds()
+        if original_preds is not None:
+            errors = original_preds - errors
 
-        >>> modelObjc = RandomForestRegressor()
-        >>> # wine quality dataset example
-        >>> wine = pd.read_csv('debug/wine.csv')
-        >>> groupby_df = wine[['alcohol', 'Type']]
-        >>> ydepend = 'quality'
-        >>> X = wine.loc[:, wine.columns != ydepend]
-        >>> y = wine.loc[:, ydepend]
-        >>> X = pd.get_dummies(X)
-        >>> modelObjc.fit(X, y)
-        >>> # being sensitivity
-        >>> RE = Sensitivity(prediction_fn=modelObjc.predict,
-        >>>                      model_type='regression')
-        >>> res = RE.fit_transform(X=X, y=y)
-        >>> res.head()
-        MSE  Total groupByValue groupByVarName            x_name  x_value
-        0.040000    1.0         high        alcohol  volatile acidity    0.115
-        0.172500    4.0         high        alcohol  volatile acidity    0.160
-        0.245000    6.0         high        alcohol  volatile acidity    0.170
-        """
+        return errors
 
-        if abs(std) > 3:
-            warnings.warn("""Standard deviation number set above 3. Unreliable sensitivities
-            are likely to occur. std: {}""".format(std))
-        self.std = std
-        self.data_container = deque()
-
-        super(Sensitivity, self).__init__(**kwargs)
-
-    def _make_error_dict(self):
-        """
-        Construct lookup dictionary mapping continuous features to errors based on
-        sensitivity adjustment (i.e. self.std)
-
-        :return: dict
-            {'column_1': [1, 0.9, 1, 0.23, ...]}
-        """
-        if self.model_type == 'classification':
-            original_preds = self._create_errors(self.data_set.X, self.data_set.y)
-        else:
-            original_preds = self.prediction_fn(self.data_set.X)
-
-        error_dict = {}
-        change_dict = {}
-        for idx, fname in enumerate(self.data_set.feature_names):
-            if not DataUtilities.isbinary(self.data_set.X[:, idx]):
-                X_copy = np.copy(self.data_set.X)
-                change = np.std(self.data_set.X[:, idx])
-                X_copy[:, idx] = X_copy[:, idx] + (change * self.std)
-                errors = self._create_errors(X_copy, self.data_set.y,
-                                             original_preds=original_preds)
-                error_dict[idx] = errors
-                change_dict[idx] = change
-
-        return error_dict, change_dict
+class SensitivityMixin(object):
 
     def fit(self, X, y, groupby_df=None,
             **kwargs):
@@ -293,8 +267,9 @@ class Sensitivity(Eval):
         :return: pd.DataFrame
             transformed dataset
         """
+        self._set_data(X, y, groupby_df)
         original_errors = self._create_errors(X, y)
-        groups = self._make_data(X, y, groupby_df, errors=original_errors)
+        groups = self._make_data(errors=original_errors)
         error_dict, change_dict = self._make_error_dict()
 
         for group in groups:
@@ -309,3 +284,125 @@ class Sensitivity(Eval):
                                             **group)
 
         self._reset_state()
+
+    def _make_error_dict(self):
+        """
+        Construct lookup dictionary mapping continuous features to errors based on
+        sensitivity adjustment (i.e. self.std)
+
+        :return: dict
+            {'column_1': [1, 0.9, 1, 0.23, ...]}
+        """
+        original_preds = self._create_original_preds()
+
+        error_dict = {}
+        change_dict = {}
+        for idx, fname in enumerate(self.data_set.feature_names):
+            if not DataUtilities.isbinary(self.data_set.X[:, idx]):
+                X_copy = np.copy(self.data_set.X)
+                change = np.std(self.data_set.X[:, idx])
+                X_copy[:, idx] = X_copy[:, idx] + (change * self.std)
+                errors = self._create_errors(X_copy, self.data_set.y,
+                                             original_preds=original_preds)
+                error_dict[idx] = errors
+                change_dict[idx] = change
+
+        return error_dict, change_dict
+
+
+class Sensitivity(Eval, SensitivityMixin):
+
+    def __init__(self, std=1, **kwargs):
+        """
+
+
+        :param std: int|float - optional
+            standard deviation number to construct synthetic data
+        :param kwargs:
+
+        Examples
+        ---------
+        >>> import pandas as pd
+        >>> from sklearn.ensemble import RandomForestRegressor
+        >>> from mdesc.models import Sensitivity
+
+        >>> modelObjc = RandomForestRegressor()
+        >>> # wine quality dataset example
+        >>> wine = pd.read_csv('debug/wine.csv')
+        >>> groupby_df = wine[['alcohol', 'Type']]
+        >>> ydepend = 'quality'
+        >>> X = wine.loc[:, wine.columns != ydepend]
+        >>> y = wine.loc[:, ydepend]
+        >>> X = pd.get_dummies(X)
+        >>> modelObjc.fit(X, y)
+        >>> # being sensitivity
+        >>> RE = Sensitivity(prediction_fn=modelObjc.predict)
+        >>> res = RE.fit_transform(X=X, y=y)
+        >>> res.head()
+        MSE  Total groupByValue groupByVarName            x_name  x_value
+        0.040000    1.0         high        alcohol  volatile acidity    0.115
+        0.172500    4.0         high        alcohol  volatile acidity    0.160
+        0.245000    6.0         high        alcohol  volatile acidity    0.170
+        """
+
+        if abs(std) > 3:
+            warnings.warn("""Standard deviation number set above 3. Unreliable sensitivities
+            are likely to occur. std: {}""".format(std))
+
+        super(Sensitivity, self).__init__(**kwargs)
+
+        self.class_type = 'sensitivity'
+        self.std = std
+        self.data_container = deque()
+
+    def _create_original_preds(self):
+        return self.prediction_fn(self.data_set.X)
+
+
+class ClassifierSensitivity(ClassifierEval, SensitivityMixin):
+    def __init__(self, std=1, **kwargs):
+        """
+
+
+        :param std: int|float - optional
+            standard deviation number to construct synthetic data
+        :param kwargs:
+
+        Examples
+        ---------
+        >>> import pandas as pd
+        >>> from sklearn.ensemble import RandomForestClassifier
+        >>> from mdesc.models import ClassifierSensitivity
+
+        >>> modelObjc = RandomForestClassifier()
+        >>> # wine quality dataset example
+        >>> wine = pd.read_csv('debug/wine.csv')
+        >>> groupby_df = wine[['alcohol', 'Type']]
+        >>> ydepend = 'quality'
+        >>> X = wine.loc[:, wine.columns != ydepend]
+        >>> y = wine.loc[:, ydepend]
+        >>> y = np.array(['bad' if val < 5 else 'good' for val in y])
+        >>> X = pd.get_dummies(X)
+        >>> modelObjc.fit(X, y)
+        >>> # being sensitivity
+        >>> RE = Sensitivity(prediction_fn=modelObjc.predict_proba)
+        >>> res = RE.fit_transform(X=X, y=y)
+        >>> res.head()
+        MSE  Total groupByValue groupByVarName            x_name  x_value
+        0.040000    1.0         high        alcohol  volatile acidity    0.115
+        0.172500    4.0         high        alcohol  volatile acidity    0.160
+        0.245000    6.0         high        alcohol  volatile acidity    0.170
+        """
+
+        if abs(std) > 3:
+            warnings.warn("""Standard deviation number set above 3. Unreliable sensitivities
+            are likely to occur. std: {}""".format(std))
+
+        super(ClassifierSensitivity, self).__init__(**kwargs)
+
+        self.std = std
+        self.data_container = deque()
+        self.class_type = 'sensitivity'
+
+    def _create_original_preds(self):
+        return self._create_errors(self.data_set.X, self.data_set.y)

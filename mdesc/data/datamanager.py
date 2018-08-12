@@ -6,7 +6,7 @@ from pandas.api.types import is_numeric_dtype
 
 from mdesc.utils import mdesc_exceptions
 from mdesc.utils.mdesc_utils import load_wine
-from mdesc.data.datavisualizer import DataVisualizer
+from mdesc.data.datavisualizer import NotebookVisualizer
 from mdesc.utils.metrics import MetricMixin
 
 
@@ -128,7 +128,7 @@ class DataUtilities(object):
         return to_return
 
 
-class DataManager(DataVisualizer, MetricMixin):
+class DataManager(NotebookVisualizer, MetricMixin):
 
     __datatypes__ = (pd.DataFrame, pd.Series, np.ndarray)
 
@@ -174,8 +174,8 @@ class DataManager(DataVisualizer, MetricMixin):
 
         self.model_type = model_type
         self.feature_names = self._format_labels(feature_names)
-        self.target_classes = self._check_target_classes(target_name, y)
-        self.target_name = self._format_labels(target_classes)
+        self.target_classes = self._check_target_classes(target_classes, y)
+        self.target_name = self._format_labels(target_name)
         self.groupby_names = self._format_labels(groupby_names)
         self._X = self._check_X(X)
         self._y = self._check_y(y, X)
@@ -187,7 +187,7 @@ class DataManager(DataVisualizer, MetricMixin):
         self.accuracy = pd.DataFrame()
         self.p_group_df = pd.DataFrame()
 
-        super(DataManager, self).__init__(round_num=round_num)
+        super(DataManager, self).__init__(rgb=None, round_num=round_num)
 
     def _format_labels(self, labels):
         if isinstance(labels, str) or labels is None:
