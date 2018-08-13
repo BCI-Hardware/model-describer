@@ -189,6 +189,33 @@ class DataManager(NotebookVisualizer, MetricMixin):
 
         super(DataManager, self).__init__(rgb=None, round_num=round_num)
 
+    @property
+    def groupby_df(self):
+        return self._groupby_df
+
+    @groupby_df.setter
+    def groupby_df(self, value):
+        groupby_df = self._check_groupby_df(value, self._X)
+        self._groupby_df = groupby_df
+
+    @property
+    def X(self):
+        return self._X
+
+    @property
+    def y(self):
+        return self._y
+
+    @property
+    def results(self):
+        return self._results
+
+    @results.setter
+    def results(self, value):
+        if not isinstance(value, pd.DataFrame):
+            raise ValueError("""results must be pd.DataFrame. Got type: {}""".format(type(value)))
+        self._results = value.round(decimals=self.round_num)
+
     def _format_labels(self, labels):
         if isinstance(labels, str) or labels is None:
             labels = [labels]
@@ -420,29 +447,4 @@ class DataManager(NotebookVisualizer, MetricMixin):
                                                                                                          feature_names=p_input_fnames,
                                                                                                          round_num=self.round_num)
 
-    @property
-    def groupby_df(self):
-        return self._groupby_df
 
-    @groupby_df.setter
-    def groupby_df(self, value):
-        groupby_df = self._check_groupby_df(value, self._X)
-        self._groupby_df = groupby_df
-
-    @property
-    def X(self):
-        return self._X
-
-    @property
-    def y(self):
-        return self._y
-
-    @property
-    def results(self):
-        return self._results
-
-    @results.setter
-    def results(self, value):
-        if not isinstance(value, pd.DataFrame):
-            raise ValueError("""results must be pd.DataFrame. Got type: {}""".format(type(value)))
-        self._results = value.round(decimals=self.round_num)

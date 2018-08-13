@@ -11,74 +11,7 @@ from mdesc.utils.metrics import MetricMixin
 from mdesc.utils.mdesc_utils import prob_acc
 
 
-class Eval(MetricMixin):
-
-    def __init__(self, round_num=2, prediction_fn=None,
-                 error_type='MSE', target_names=None,
-                 groupby_names=None, feature_names=None,
-                 model_type='regression'):
-
-        """
-
-        :param round_num:
-        :param prediction_fn:
-        :param error_type:
-        :param model_type:
-        :param target_names: array type
-            (optional) names of classes that describe model outputs
-        """
-
-        self.round_num = round_num
-        self.prediction_fn = prediction_fn
-        self.error_type = error_type
-        self.data_container = deque()
-        self.model_type = model_type
-        self.target_names = target_names
-        self.groupby_names = groupby_names
-        self.feature_names = feature_names
-        self.class_type = 'eval'
-
-    def _create_preds(self, X):
-        return self.prediction_fn(X)
-
-    def _create_errors(self, X, y,
-                       original_preds=None):
-        """
-        construct error metrics based on difference between y_hat and y_true
-
-        For regression tasks, simply measure the difference between y_hat and y_true.
-        For classification tasks, get the predicted probability of falling in class 1.
-        Using the predicted probability, get the prediction accuracy against the true class.
-
-        If original_preds specified, measure the difference between new predictions and
-        original_predictions to develop sensitivity measures.
-
-        :param X: np.array - required
-            Input X array
-        :param y: np.array - required
-            Input y array
-        :param original_preds: np.array - optional
-            original prediction array
-        :return: np.array
-            array of error measures
-        """
-        y_pred = self._create_preds(X)
-        if original_preds is not None:
-            errors = original_preds - y_pred
-        else:
-            errors = y - y_pred
-
-        return errors
-
-    def _set_data(self, X, y, groupby_df):
-
-        self.data_set = DataManager(X=X, y=y, groupby_df=groupby_df,
-                                    target_name=self.target_names,
-                                    feature_names=self.feature_names,
-                                    groupby_names=self.groupby_names,
-                                    model_type=self.model_type,
-                                    class_type=self.class_type
-                                    )
+class ModelMixin(MetricMixin):
 
     def _make_data(self, **kwargs):
 
@@ -137,6 +70,164 @@ class Eval(MetricMixin):
 
         self.data_container.append(errdf)
 
+    def fit_transform(self, X, y, groupby_df=None,
+                      **kwargs):
+        """
+        fit X,y and transform by returning aggregate measures
+
+        :param X: np.array or pd.DataFrame - required
+            input X used to build model
+        :param y: np.array - required
+            input y used to build model
+        :param groupby_df: np.array or pd.DataFrame - optional
+            groupby values to build metrics within regions of data. If left None,
+            default is to summarize thte entire dataset with an 'all' indicator
+        :param kwargs: optional kywrd arguments
+            errors: np.array - optional
+                modified error values to use for calculation
+        :return: pd.DataFrame
+            transformed dataset
+        """
+
+        self.fit(X=X, y=y, groupby_df=groupby_df,
+                 **kwargs)
+
+        return self.data_set.results
+
+
+class RegressorMixin(ModelMixin):
+
+    def _set_data(self, X, y, groupby_df):
+
+        self.data_set = DataManager(X=X, y=y, groupby_df=groupby_df,
+                                    target_name=self.target_names,
+                                    feature_names=self.feature_names,
+                                    groupby_names=self.groupby_names,
+                                    model_type=self.model_type,
+                                    class_type=self.class_type
+                                    )
+
+    def _create_preds(self, X):
+        return self.prediction_fn(X)
+
+    def _create_errors(self, X, y,
+                       original_preds=None):
+        """
+        construct error metrics based on difference between y_hat and y_true
+
+        For regression tasks, simply measure the difference between y_hat and y_true.
+        For classification tasks, get the predicted probability of falling in class 1.
+        Using the predicted probability, get the prediction accuracy against the true class.
+
+        If original_preds specified, measure the difference between new predictions and
+        original_predictions to develop sensitivity measures.
+
+        :param X: np.array - required
+            Input X array
+        :param y: np.array - required
+            Input y array
+        :param original_preds: np.array - optional
+            original prediction array
+        :return: np.array
+            array of error measures
+        """
+        y_pred = self._create_preds(X)
+        if original_preds is not None:
+            errors = original_preds - y_pred
+        else:
+            errors = y - y_pred
+
+        return errors
+
+    def _create_original_preds(self):
+        return self.prediction_fn(self.data_set.X)
+
+class ClassifierMixin(ModelMixin):
+
+    def _set_data(self, X, y, groupby_df):
+
+        self.data_set = DataManager(X=X, y=y, groupby_df=groupby_df,
+                                    target_name=self.target_names,
+                                    feature_names=self.feature_names,
+                                    groupby_names=self.groupby_names,
+                                    model_type=self.model_type,
+                                    class_type=self.class_type,
+                                    target_classes=self.target_classes
+                                    )
+
+    def _create_preds(self, X):
+        y_pred = self.prediction_fn(X)
+        y_pred = y_pred[:, 1]
+        return y_pred
+
+    def _create_errors(self, X, y,
+                       original_preds=None):
+        """
+        construct error metrics based on difference between y_hat and y_true
+
+        For regression tasks, simply measure the difference between y_hat and y_true.
+        For classification tasks, get the predicted probability of falling in class 1.
+        Using the predicted probability, get the prediction accuracy against the true class.
+
+        If original_preds specified, measure the difference between new predictions and
+        original_predictions to develop sensitivity measures.
+
+        :param X: np.array - required
+            Input X array
+        :param y: np.array - required
+            Input y array
+        :param original_preds: np.array - optional
+            original prediction array
+        :return: np.array
+            array of error measures
+        """
+        def unpack_preds():
+            pred_proba_y = self._create_preds(X)
+            actual_y = [self.data_set.target_classes[x] for x in y]
+            prob_diff = [prob_acc(true_class=actual_value, pred_prob=pred_value) for actual_value, pred_value in
+                         zip(actual_y, pred_proba_y)]
+            return np.array(prob_diff)
+
+        errors = unpack_preds()
+        print("""in classifier mixin create_preds, errors: {}""".format(errors))
+
+        if original_preds is not None:
+            errors = original_preds - errors
+
+        return errors
+
+    def _create_original_preds(self):
+        return self._create_errors(self.data_set.X, self.data_set.y)
+
+
+
+class Eval(RegressorMixin):
+
+    def __init__(self, round_num=2, prediction_fn=None,
+                 error_type='MSE', target_names=None,
+                 groupby_names=None, feature_names=None,
+                 model_type='regression'):
+
+        """
+
+        :param round_num:
+        :param prediction_fn:
+        :param error_type:
+        :param model_type:
+        :param target_names: array type
+            (optional) names of classes that describe model outputs
+        """
+
+        self.round_num = round_num
+        self.prediction_fn = prediction_fn
+        self.error_type = error_type
+        self.data_container = deque()
+        self.model_type = model_type
+        self.target_names = target_names
+        self.groupby_names = groupby_names
+        self.feature_names = feature_names
+        self.class_type = 'eval'
+
     def fit(self, X, y, groupby_df=None,
             errors=None):
         """
@@ -168,32 +259,8 @@ class Eval(MetricMixin):
 
         self._reset_state()
 
-    def fit_transform(self, X, y, groupby_df=None,
-                      **kwargs):
-        """
-        fit X,y and transform by returning aggregate measures
 
-        :param X: np.array or pd.DataFrame - required
-            input X used to build model
-        :param y: np.array - required
-            input y used to build model
-        :param groupby_df: np.array or pd.DataFrame - optional
-            groupby values to build metrics within regions of data. If left None,
-            default is to summarize thte entire dataset with an 'all' indicator
-        :param kwargs: optional kywrd arguments
-            errors: np.array - optional
-                modified error values to use for calculation
-        :return: pd.DataFrame
-            transformed dataset
-        """
-
-        self.fit(X=X, y=y, groupby_df=groupby_df,
-                 **kwargs)
-
-        return self.data_set.results
-
-
-class ClassifierEval(Eval):
+class ClassifierEval(Eval, ClassifierMixin):
 
     def __init__(self, round_num=4, prediction_fn=None,
                  error_type='MEAN', target_names=None,
@@ -206,84 +273,8 @@ class ClassifierEval(Eval):
                                              groupby_names=groupby_names, feature_names=feature_names,
                                              model_type='classification')
 
-    def _create_preds(self, X):
-        y_pred = self.prediction_fn(X)
-        y_pred = y_pred[:, 1]
-        return y_pred
 
-    def _create_errors(self, X, y,
-                       original_preds=None):
-        """
-        construct error metrics based on difference between y_hat and y_true
-
-        For regression tasks, simply measure the difference between y_hat and y_true.
-        For classification tasks, get the predicted probability of falling in class 1.
-        Using the predicted probability, get the prediction accuracy against the true class.
-
-        If original_preds specified, measure the difference between new predictions and
-        original_predictions to develop sensitivity measures.
-
-        :param X: np.array - required
-            Input X array
-        :param y: np.array - required
-            Input y array
-        :param original_preds: np.array - optional
-            original prediction array
-        :return: np.array
-            array of error measures
-        """
-
-        def unpack_preds():
-            pred_proba_y = self._create_preds(X)
-            actual_y = [self.data_set.target_classes[x] for x in y]
-            prob_diff = [prob_acc(true_class=actual_value, pred_prob=pred_value) for actual_value, pred_value in
-                         zip(actual_y, pred_proba_y)]
-            return np.array(prob_diff)
-
-
-        errors = unpack_preds()
-        if original_preds is not None:
-            errors = original_preds - errors
-
-        return errors
-
-class SensitivityMixin(object):
-
-    def fit(self, X, y, groupby_df=None,
-            **kwargs):
-        """
-        fit X,y and transform by returning aggregate measures
-
-        :param X: np.array or pd.DataFrame - required
-            input X used to build model
-        :param y: np.array - required
-            input y used to build model
-        :param groupby_df: np.array or pd.DataFrame - optional
-            groupby values to build metrics within regions of data. If left None,
-            default is to summarize thte entire dataset with an 'all' indicator
-        :param kwargs: optional kywrd arguments
-            errors: np.array - optional
-                modified error values to use for calculation
-        :return: pd.DataFrame
-            transformed dataset
-        """
-        self._set_data(X, y, groupby_df)
-        original_errors = self._create_errors(X, y)
-        groups = self._make_data(errors=original_errors)
-        error_dict, change_dict = self._make_error_dict()
-
-        for group in groups:
-            y_slice = self.data_set.y[group['percentile_indices']]
-            group['y_slice'] = y_slice
-            col_idx = np.where(self.data_set.feature_names == group['colname'])[0][0]
-            group['std_change'] = change_dict[col_idx]
-            # col_idx = self.data_set.feature_names.index(col_name)
-
-            self.construct_group_aggregates(self.data_set.X[group['percentile_indices']],
-                                            errors=error_dict[col_idx][group['percentile_indices']],
-                                            **group)
-
-        self._reset_state()
+class SensitivityMixin(ModelMixin):
 
     def _make_error_dict(self):
         """
@@ -301,18 +292,23 @@ class SensitivityMixin(object):
             if not DataUtilities.isbinary(self.data_set.X[:, idx]):
                 X_copy = np.copy(self.data_set.X)
                 change = np.std(self.data_set.X[:, idx])
-                X_copy[:, idx] = X_copy[:, idx] + (change * self.std)
+                change = change * self.std
+                X_copy[:, idx] = X_copy[:, idx] + change
                 errors = self._create_errors(X_copy, self.data_set.y,
                                              original_preds=original_preds)
                 error_dict[idx] = errors
                 change_dict[idx] = change
+                print(change)
 
         return error_dict, change_dict
 
 
-class Sensitivity(Eval, SensitivityMixin):
+class Sensitivity(SensitivityMixin, RegressorMixin):
 
-    def __init__(self, std=1, **kwargs):
+    def __init__(self, round_num = 2, prediction_fn = None,
+                 error_type = 'MSE', target_names = None,
+                 groupby_names = None, feature_names = None,
+                 std=1, **kwargs):
         """
 
 
@@ -349,18 +345,55 @@ class Sensitivity(Eval, SensitivityMixin):
             warnings.warn("""Standard deviation number set above 3. Unreliable sensitivities
             are likely to occur. std: {}""".format(std))
 
-        super(Sensitivity, self).__init__(**kwargs)
-
+        self.round_num = round_num
+        self.prediction_fn = prediction_fn
+        self.error_type = error_type
+        self.target_names = target_names
+        self.groupby_names = groupby_names
+        self.feature_names = feature_names
         self.class_type = 'sensitivity'
+        self.model_type = 'classification'
         self.std = std
         self.data_container = deque()
 
-    def _create_original_preds(self):
-        return self.prediction_fn(self.data_set.X)
+    def fit(self, X, y, groupby_df=None):
+        """
+        fit X,y and transform by returning aggregate measures
+
+        :param X: np.array or pd.DataFrame - required
+            input X used to build model
+        :param y: np.array - required
+            input y used to build model
+        :param groupby_df: np.array or pd.DataFrame - optional
+            groupby values to build metrics within regions of data. If left None,
+            default is to summarize thte entire dataset with an 'all' indicator
+        :param kwargs: optional kywrd arguments
+            errors: np.array - optional
+                modified error values to use for calculation
+        :return: pd.DataFrame
+            transformed dataset
+        """
+        self._set_data(X, y, groupby_df)
+        original_errors = self._create_errors(X, y)
+        groups = self._make_data(errors=original_errors)
+        error_dict, change_dict = self._make_error_dict()
+
+        for group in groups:
+            y_slice = self.data_set.y[group['percentile_indices']]
+            group['y_slice'] = y_slice
+            col_idx = np.where(self.data_set.feature_names == group['colname'])[0][0]
+            group['std_change'] = change_dict[col_idx]
+            # col_idx = self.data_set.feature_names.index(col_name)
+
+            self.construct_group_aggregates(self.data_set.X[group['percentile_indices']],
+                                            errors=error_dict[col_idx][group['percentile_indices']],
+                                            **group)
+
+        self._reset_state()
 
 
-class ClassifierSensitivity(ClassifierEval, SensitivityMixin):
-    def __init__(self, std=1, **kwargs):
+class ClassifierSensitivity(Sensitivity, ClassifierMixin):
+    def __init__(self, std=1, target_classes=None, **kwargs):
         """
 
 
@@ -402,7 +435,5 @@ class ClassifierSensitivity(ClassifierEval, SensitivityMixin):
 
         self.std = std
         self.data_container = deque()
+        self.target_classes = target_classes
         self.class_type = 'sensitivity'
-
-    def _create_original_preds(self):
-        return self._create_errors(self.data_set.X, self.data_set.y)
