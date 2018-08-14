@@ -3,6 +3,7 @@ import re
 import random
 
 import numpy as np
+from scipy import signal
 
 from plotly.offline import download_plotlyjs, init_notebook_mode, plot, iplot
 import plotly.graph_objs as go
@@ -191,6 +192,11 @@ class NotebookVisualizer(DataVisualizer):
         self.title_lookup = {}
         super(NotebookVisualizer, self).__init__(round_num=round_num)
 
+    def smooth_line(self, input):
+        if self.smooth is True:
+            input = signal.savgol_filter(input, 53, 3)
+        return input
+
     def _create_base_trace(self, level, x, y, rgb=None):
 
         if rgb is None:
@@ -201,7 +207,7 @@ class NotebookVisualizer(DataVisualizer):
         trace1 = go.Scatter(
             x=x,
             y=y,
-            line=dict(color='rgb({},{},{})'.format(r, g, b)),
+            line=dict(color='rgb({},{},{})'.format(r, g, b), shape='spline'),
             mode='lines',
             name=level,
         )
@@ -220,7 +226,7 @@ class NotebookVisualizer(DataVisualizer):
             y=y_upper + y_lower,
             fill='tozerox',
             fillcolor='rgba({},{},{},0.2)'.format(r, g, b),
-            line=dict(color='rgba(255,255,255,0)'),
+            line=dict(color='rgba(255,255,255,0)', shape='spline'),
             showlegend=False,
             name=level,
         )
@@ -362,14 +368,15 @@ class NotebookVisualizer(DataVisualizer):
 
         return layout
 
-    def viz_now(self, groupby_name=None, rgb=None):
+    def viz_now(self, groupby_name=None, rgb=None,
+                smooth=True):
 
         if groupby_name is None:
             raise ValueError("""Must select viable groupby variable. Available groupby variables
             inclue: {}""".format(None))  # TODO add self.groupby_df names
 
         self.groupby_name = groupby_name
-        self.target_name = 'quality'
+        self.smooth = smooth
 
         # iterate over levels within groupby_name
         self.levels = self._results.loc[self._results['groupByVarName'] == self.groupby_name, 'groupByValue'].unique()

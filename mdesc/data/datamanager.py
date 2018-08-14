@@ -175,7 +175,7 @@ class DataManager(NotebookVisualizer, MetricMixin):
         self.model_type = model_type
         self.feature_names = self._format_labels(feature_names)
         self.target_classes = self._check_target_classes(target_classes, y)
-        self.target_name = self._format_labels(target_name)
+        self.target_name = target_name
         self.groupby_names = self._format_labels(groupby_names)
         self._X = self._check_X(X)
         self._y = self._check_y(y, X)

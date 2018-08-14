@@ -5,10 +5,12 @@ import pandas as pd
 import numpy as np
 from collections import deque
 import warnings
+from abc import ABCMeta, abstractmethod
 
 from mdesc.data.datamanager import (DataManager, DataUtilities)
 from mdesc.utils.metrics import MetricMixin
 from mdesc.utils.mdesc_utils import prob_acc
+
 
 
 class ModelMixin(MetricMixin):
@@ -70,8 +72,31 @@ class ModelMixin(MetricMixin):
 
         self.data_container.append(errdf)
 
+
+class BaseModel(ModelMixin, metaclass=ABCMeta):
+
+    def __init__(self, round_num=2, prediction_fn=None,
+                 error_type='MSE', target_names=None,
+                 groupby_names=None, feature_names=None):
+
+        self.round_num = round_num
+        self.prediction_fn = prediction_fn
+        self.error_type = error_type
+        self.target_names = target_names
+        self.groupby_names = groupby_names
+        self.feature_names = feature_names
+        self.data_container = deque()
+
+    @abstractmethod
+    def fit(self, X, y, groupby_df=None, **params):
+        pass
+
+    def transform(self):
+        # TODO check datamanager is fitted
+        return self.data_set.results
+
     def fit_transform(self, X, y, groupby_df=None,
-                      **kwargs):
+                      **params):
         """
         fit X,y and transform by returning aggregate measures
 
@@ -90,12 +115,67 @@ class ModelMixin(MetricMixin):
         """
 
         self.fit(X=X, y=y, groupby_df=groupby_df,
-                 **kwargs)
-
-        return self.data_set.results
+                 **params).transform()
 
 
-class RegressorMixin(ModelMixin):
+class BaseEval(BaseModel):
+
+    def __init__(self, round_num=2, prediction_fn=None,
+                 error_type='MSE', target_names=None,
+                 groupby_names=None, feature_names=None):
+
+        """
+
+        :param round_num:
+        :param prediction_fn:
+        :param error_type:
+        :param model_type:
+        :param target_names: array type
+            (optional) names of classes that describe model outputs
+        """
+        super(BaseEval, self).__init__(round_num=round_num,
+                                       prediction_fn=prediction_fn,
+                                       error_type=error_type,
+                                       target_names=target_names,
+                                       groupby_names=groupby_names,
+                                       feature_names=feature_names)
+
+        self.class_type = 'eval'
+
+    def fit(self, X, y, groupby_df=None,
+            errors=None):
+        """
+        fit X, y and build aggregate performance stats by region of data
+
+        :param X: np.array or pd.DataFrame - required
+            input X used to build model
+        :param y: np.array - required
+            input y used to build model
+        :param groupby_df: np.array or pd.DataFrame - optional
+            groupby values to build metrics within regions of data. If left None,
+            default is to summarize thte entire dataset with an 'all' indicator
+        :param errors: np.array - optional
+            modified error values to use for calculation
+        """
+        self._set_data(X, y, groupby_df)
+
+        if errors is None:
+            errors = self._create_errors(X, y)
+
+        groups = self._make_data(errors=errors)
+        y_pred = self._create_preds(self.data_set.X)
+
+        for group in groups:
+            group['y_slice'] = y_pred[group['percentile_indices']]
+            self.construct_group_aggregates(self.data_set.X[group['percentile_indices']],
+                                            errors=errors[group['percentile_indices']],
+                                            **group)
+
+        self._reset_state()
+        return self
+
+
+class RegressorMixin(object):
 
     def _set_data(self, X, y, groupby_df):
 
@@ -142,7 +222,8 @@ class RegressorMixin(ModelMixin):
     def _create_original_preds(self):
         return self.prediction_fn(self.data_set.X)
 
-class ClassifierMixin(ModelMixin):
+
+class ClassifierMixin(object):
 
     def _set_data(self, X, y, groupby_df):
 
@@ -150,7 +231,7 @@ class ClassifierMixin(ModelMixin):
                                     target_name=self.target_names,
                                     feature_names=self.feature_names,
                                     groupby_names=self.groupby_names,
-                                    model_type=self.model_type,
+                                    model_type='classification',
                                     class_type=self.class_type,
                                     target_classes=self.target_classes
                                     )
@@ -201,12 +282,11 @@ class ClassifierMixin(ModelMixin):
 
 
 
-class Eval(RegressorMixin):
+class Eval(BaseEval, RegressorMixin):
 
     def __init__(self, round_num=2, prediction_fn=None,
                  error_type='MSE', target_names=None,
-                 groupby_names=None, feature_names=None,
-                 model_type='regression'):
+                 groupby_names=None, feature_names=None):
 
         """
 
@@ -217,21 +297,60 @@ class Eval(RegressorMixin):
         :param target_names: array type
             (optional) names of classes that describe model outputs
         """
+        super(Eval, self).__init__(round_num=round_num,
+                                   prediction_fn=prediction_fn,
+                                   error_type=error_type,
+                                   target_names=target_names,
+                                   groupby_names=groupby_names,
+                                   feature_names=feature_names)
 
-        self.round_num = round_num
-        self.prediction_fn = prediction_fn
-        self.error_type = error_type
-        self.data_container = deque()
-        self.model_type = model_type
-        self.target_names = target_names
-        self.groupby_names = groupby_names
-        self.feature_names = feature_names
-        self.class_type = 'eval'
+        self.model_type = 'regression'
+
+
+class ClassifierEval(BaseEval, ClassifierMixin):
+
+    def __init__(self, round_num=4, prediction_fn=None,
+                 error_type='MEAN', target_names=None,
+                 groupby_names=None, feature_names=None,
+                 target_classes=None):
+
+        self.target_classes = target_classes
+        self.model_type = 'classification'
+        super(ClassifierEval, self).__init__(round_num=round_num, prediction_fn=prediction_fn,
+                                             error_type=error_type, target_names=target_names,
+                                             groupby_names=groupby_names, feature_names=feature_names)
+
+
+class BaseSensitivity(BaseModel):
+
+    def __init__(self, round_num=2, prediction_fn=None,
+                 error_type='MSE', target_names=None,
+                 groupby_names=None, feature_names=None,
+                 std=0.5):
+
+        """
+
+        :param round_num:
+        :param prediction_fn:
+        :param error_type:
+        :param model_type:
+        :param target_names: array type
+            (optional) names of classes that describe model outputs
+        """
+        super(BaseSensitivity, self).__init__(round_num=round_num,
+                                   prediction_fn=prediction_fn,
+                                   error_type=error_type,
+                                   target_names=target_names,
+                                   groupby_names=groupby_names,
+                                   feature_names=feature_names)
+
+        self.class_type = 'sensitivity'
+        self.std = std
 
     def fit(self, X, y, groupby_df=None,
-            errors=None):
+            **params):
         """
-        fit X, y and build aggregate performance stats by region of data
+        fit X,y and transform by returning aggregate measures
 
         :param X: np.array or pd.DataFrame - required
             input X used to build model
@@ -240,41 +359,30 @@ class Eval(RegressorMixin):
         :param groupby_df: np.array or pd.DataFrame - optional
             groupby values to build metrics within regions of data. If left None,
             default is to summarize thte entire dataset with an 'all' indicator
-        :param errors: np.array - optional
-            modified error values to use for calculation
+        :param kwargs: optional kywrd arguments
+            errors: np.array - optional
+                modified error values to use for calculation
+        :return: pd.DataFrame
+            transformed dataset
         """
         self._set_data(X, y, groupby_df)
-
-        if errors is None:
-            errors = self._create_errors(X, y)
-
-        groups = self._make_data(errors=errors)
-        y_pred = self._create_preds(self.data_set.X)
+        original_errors = self._create_errors(X, y)
+        groups = self._make_data(errors=original_errors)
+        error_dict, change_dict = self._make_error_dict()
 
         for group in groups:
-            group['y_slice'] = y_pred[group['percentile_indices']]
+            y_slice = self.data_set.y[group['percentile_indices']]
+            group['y_slice'] = y_slice
+            col_idx = np.where(self.data_set.feature_names == group['colname'])[0][0]
+            group['std_change'] = change_dict[col_idx]
+            # col_idx = self.data_set.feature_names.index(col_name)
+
             self.construct_group_aggregates(self.data_set.X[group['percentile_indices']],
-                                            errors=errors[group['percentile_indices']],
+                                            errors=error_dict[col_idx][group['percentile_indices']],
                                             **group)
 
         self._reset_state()
-
-
-class ClassifierEval(Eval, ClassifierMixin):
-
-    def __init__(self, round_num=4, prediction_fn=None,
-                 error_type='MEAN', target_names=None,
-                 groupby_names=None, feature_names=None,
-                 target_classes=None):
-
-        self.target_classes = target_classes
-        super(ClassifierEval, self).__init__(round_num=round_num, prediction_fn=prediction_fn,
-                                             error_type=error_type, target_names=target_names,
-                                             groupby_names=groupby_names, feature_names=feature_names,
-                                             model_type='classification')
-
-
-class SensitivityMixin(ModelMixin):
+        return self
 
     def _make_error_dict(self):
         """
@@ -303,12 +411,12 @@ class SensitivityMixin(ModelMixin):
         return error_dict, change_dict
 
 
-class Sensitivity(SensitivityMixin, RegressorMixin):
+class Sensitivity(BaseSensitivity, RegressorMixin):
 
     def __init__(self, round_num = 2, prediction_fn = None,
                  error_type = 'MSE', target_names = None,
                  groupby_names = None, feature_names = None,
-                 std=1, **kwargs):
+                 std=1):
         """
 
 
@@ -345,55 +453,19 @@ class Sensitivity(SensitivityMixin, RegressorMixin):
             warnings.warn("""Standard deviation number set above 3. Unreliable sensitivities
             are likely to occur. std: {}""".format(std))
 
-        self.round_num = round_num
-        self.prediction_fn = prediction_fn
-        self.error_type = error_type
-        self.target_names = target_names
-        self.groupby_names = groupby_names
-        self.feature_names = feature_names
-        self.class_type = 'sensitivity'
-        self.model_type = 'classification'
-        self.std = std
-        self.data_container = deque()
-
-    def fit(self, X, y, groupby_df=None):
-        """
-        fit X,y and transform by returning aggregate measures
-
-        :param X: np.array or pd.DataFrame - required
-            input X used to build model
-        :param y: np.array - required
-            input y used to build model
-        :param groupby_df: np.array or pd.DataFrame - optional
-            groupby values to build metrics within regions of data. If left None,
-            default is to summarize thte entire dataset with an 'all' indicator
-        :param kwargs: optional kywrd arguments
-            errors: np.array - optional
-                modified error values to use for calculation
-        :return: pd.DataFrame
-            transformed dataset
-        """
-        self._set_data(X, y, groupby_df)
-        original_errors = self._create_errors(X, y)
-        groups = self._make_data(errors=original_errors)
-        error_dict, change_dict = self._make_error_dict()
-
-        for group in groups:
-            y_slice = self.data_set.y[group['percentile_indices']]
-            group['y_slice'] = y_slice
-            col_idx = np.where(self.data_set.feature_names == group['colname'])[0][0]
-            group['std_change'] = change_dict[col_idx]
-            # col_idx = self.data_set.feature_names.index(col_name)
-
-            self.construct_group_aggregates(self.data_set.X[group['percentile_indices']],
-                                            errors=error_dict[col_idx][group['percentile_indices']],
-                                            **group)
-
-        self._reset_state()
+        super(Sensitivity, self).__init__(round_num=round_num,
+                                          prediction_fn=prediction_fn,
+                                          error_type=error_type, target_names=target_names,
+                                          groupby_names=groupby_names, feature_names=feature_names,
+                                          std=std)
+        self.model_type = 'regression'
 
 
-class ClassifierSensitivity(Sensitivity, ClassifierMixin):
-    def __init__(self, std=1, target_classes=None, **kwargs):
+class ClassifierSensitivity(BaseSensitivity, ClassifierMixin):
+    def __init__(self, round_num = 2, prediction_fn = None,
+                 error_type = 'MSE', target_names = None,
+                 groupby_names = None, feature_names = None,
+                 std=1, target_classes=None):
         """
 
 
@@ -431,9 +503,10 @@ class ClassifierSensitivity(Sensitivity, ClassifierMixin):
             warnings.warn("""Standard deviation number set above 3. Unreliable sensitivities
             are likely to occur. std: {}""".format(std))
 
-        super(ClassifierSensitivity, self).__init__(**kwargs)
+        super(ClassifierSensitivity, self).__init__(round_num=round_num, prediction_fn=prediction_fn,
+                                                    error_type=error_type, target_names=target_names,
+                                                    groupby_names=groupby_names, feature_names=feature_names,
+                                                    std=std)
 
-        self.std = std
-        self.data_container = deque()
         self.target_classes = target_classes
-        self.class_type = 'sensitivity'
+        self.model_type = 'classification'
