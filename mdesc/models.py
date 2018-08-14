@@ -188,7 +188,7 @@ class RegressorMixin(object):
                                     )
 
     def _create_preds(self, X):
-        return self.prediction_fn(X)
+        return self.prediction_fn(X).flatten()
 
     def _create_errors(self, X, y,
                        original_preds=None):
