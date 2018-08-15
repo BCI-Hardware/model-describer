@@ -345,10 +345,8 @@ class DataManager(NotebookVisualizer, MetricMixin):
     def return_group_array(self):
         """iterate over groupby dataframe and levels within groups"""
         for idx, group_col in enumerate(self.groupby_names):
-            print(idx, group_col)
             group_arr = self._groupby_df[:, idx]
             for group_level in np.unique(group_arr):
-                print(group_level)
                 group_indices = np.where(group_arr == group_level)[0] # unpack tuple
                 output_dict = {}
                 output_dict['group_arr'] = group_arr

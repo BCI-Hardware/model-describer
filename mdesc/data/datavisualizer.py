@@ -239,6 +239,7 @@ class NotebookVisualizer(DataVisualizer):
 
         for x_idx, x_name in enumerate(df['x_name'].unique()):
             x_group_slice = df.loc[(df['groupByVarName'] == self.groupby_name) & (df['x_name'] == x_name)]
+            x_group_slice = x_group_slice.sort_values('x_value')
             master_x = x_group_slice['x_value'].values
             self.all_x_names.append(x_name)
             self.col_lookup[x_name] = []
@@ -246,8 +247,7 @@ class NotebookVisualizer(DataVisualizer):
             self.title_lookup[x_name] = '{} for {} {} chart'.format(x_name, self.groupby_name, self.class_type)
             yield (x_name, x_group_slice)
 
-    def _create_nested_error_traces(self, df=None,
-                                    groupby_name=None):
+    def _create_nested_error_traces(self, df=None):
         """
         Create plotly traces for each feature and level within specified groupby_var
 
@@ -255,12 +255,13 @@ class NotebookVisualizer(DataVisualizer):
         for x_name, x_group_slice in self._base_layer(df=df):
 
             for l_idx, level in enumerate(self.levels):
-                mask = x_group_slice['groupByValue'] == level
-                y = x_group_slice.loc[mask, 'predictedYSmooth'].values
-                y_lower = (y + x_group_slice.loc[mask, 'errNeg'].values).tolist()
+                x_slice = x_group_slice[x_group_slice['groupByValue'] == level]
+                x_slice = x_slice.sort_values('x_value')
+                y = x_slice.loc[:, 'predictedYSmooth'].values
+                y_lower = (y + x_slice.loc[:, 'errNeg'].values).tolist()
                 y_lower = y_lower[::-1]
-                y_upper = (y + x_group_slice.loc[mask, 'errPos'].values).tolist()
-                x = x_group_slice.loc[mask, 'x_value'].tolist()
+                y_upper = (y + x_slice.loc[:, 'errPos'].values).tolist()
+                x = x_slice.loc[:, 'x_value'].tolist()
                 x_rev = x[::-1]
 
                 trace1, trace2 = self._create_error_trace(level, x, x_rev, y, y_upper, y_lower,

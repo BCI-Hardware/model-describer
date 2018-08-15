@@ -114,8 +114,7 @@ class BaseModel(ModelMixin, metaclass=ABCMeta):
             transformed dataset
         """
 
-        self.fit(X=X, y=y, groupby_df=groupby_df,
-                 **params).transform()
+        return self.fit(X=X, y=y, groupby_df=groupby_df, **params).transform()
 
 
 class BaseEval(BaseModel):
@@ -270,7 +269,6 @@ class ClassifierMixin(object):
             return np.array(prob_diff)
 
         errors = unpack_preds()
-        print("""in classifier mixin create_preds, errors: {}""".format(errors))
 
         if original_preds is not None:
             errors = original_preds - errors
@@ -406,7 +404,6 @@ class BaseSensitivity(BaseModel):
                                              original_preds=original_preds)
                 error_dict[idx] = errors
                 change_dict[idx] = change
-                print(change)
 
         return error_dict, change_dict
 
