@@ -197,6 +197,16 @@ class NotebookVisualizer(DataVisualizer):
             input = signal.savgol_filter(input, 53, 3)
         return input
 
+    def _reset_state(self):
+        """reset state of NoteBookVisualizer"""
+        self.traces = []
+        self.all_indices = []
+        self.all_x_names = []
+        self.col_lookup = {}
+        self.layout_lookup = {}
+        self.range_lookup = {}
+        self.title_lookup = {}
+
     def _create_base_trace(self, level, x, y, rgb=None):
 
         if rgb is None:
@@ -374,7 +384,7 @@ class NotebookVisualizer(DataVisualizer):
 
         if groupby_name is None:
             raise ValueError("""Must select viable groupby variable. Available groupby variables
-            inclue: {}""".format(None))  # TODO add self.groupby_df names
+            inclue: {}""".format(None))
 
         self.groupby_name = groupby_name
         self.smooth = smooth
@@ -396,9 +406,8 @@ class NotebookVisualizer(DataVisualizer):
 
         layout = self._create_layout(updatemenus)
 
-        # layout['updatemenus'] = updatemenus
-
         data = self.traces
         fig = go.Figure(data=data, layout=layout)
+        self._reset_state()
         return iplot(fig)
 

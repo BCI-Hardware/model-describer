@@ -336,6 +336,11 @@ class DataManager(NotebookVisualizer, MetricMixin):
                 self.target_name = target_name
             return y.values
         elif isinstance(y, np.ndarray):
+            if len(y.shape) == 2:
+                if y.shape[1] > 1:
+                    raise ValueError("""input y can only have shape (n_rows, )""")
+                # flatten out input arrs of shape (n_rows, 1)
+                y = y.flatten()
             return y
         elif isinstance(y, list):
             return np.array(y)
@@ -347,6 +352,7 @@ class DataManager(NotebookVisualizer, MetricMixin):
         for idx, group_col in enumerate(self.groupby_names):
             group_arr = self._groupby_df[:, idx]
             for group_level in np.unique(group_arr):
+                print("""return_group_array group_col: {}, group_level: {}""".format(group_col, group_level))
                 group_indices = np.where(group_arr == group_level)[0] # unpack tuple
                 output_dict = {}
                 output_dict['group_arr'] = group_arr
